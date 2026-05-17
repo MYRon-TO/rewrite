@@ -11,7 +11,7 @@ package rewrite
 	granularity:            *"millisecond" | "second" | "millisecond" | "microsecond" | "nanosecond"
 	monotonic_per_instance: *true | bool
 
-	system_clock_skew: *{} | {
+	system_clock_skew: *close({}) | {
 		[SystemID=#Identifier]: #ClockSkew
 	}
 

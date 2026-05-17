@@ -149,7 +149,7 @@ package rewrite
 		id: ID
 	}
 
-	scenario?: #Scenario
+	scenario: #Scenario
 })
 
 ir_version: *"0.1" | string
@@ -180,7 +180,7 @@ time_profiles?: [ID=#Identifier]: #TimeProfile & {
 	id: ID
 }
 
-scenario?: #Scenario
+scenario: #Scenario
 
 // Explicit MVP boundary guards for common drift fields in CUE source. The final
 // exported JSON is additionally checked against the closed #IR schema.

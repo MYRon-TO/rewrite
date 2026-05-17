@@ -42,9 +42,9 @@ IR v0.1 的固定原则：
 | `machines` | map | 否 | machine 定义集合。 |
 | `instance_groups` | map | 否 | instance_group 定义集合。 |
 | `time_profiles` | map | 否 | time_profile 定义集合。 |
-| `scenario` | object | 否 | 单个场景入口。 |
+| `scenario` | object | 是 | 单个场景入口。 |
 
-> 当前 MVP 约定一个 IR 文件只包含一个 `scenario`。
+> 当前 MVP 约定一个可执行 IR 文件必须且只能包含一个 `scenario`。
 
 ## 3. ID 与 map key 规则
 
@@ -117,7 +117,7 @@ IR v0.1 的固定原则：
 | `params` | object | 是 | `{}` | JSON 兼容参数。 |
 | `description` | string | 否 | 无 | 说明。 |
 
-`generator` 只声明值来源契约，不包含代码、hook、插件或外部调用。
+`generator` 只声明值来源契约，不包含代码、hook、插件或外部调用。`params` 在 v0.1 中按纯 JSON 数据处理；即使出现 `script`、`hook`、`plugin` 等键也不会被执行，Phase 2 的 drift 校验应继续拒绝这类越界意图。
 
 ### 4.3 `context`
 
@@ -394,7 +394,7 @@ IR v0.1 的固定原则：
 | `params` | object | 否 | 无 | JSON 兼容参数。 |
 | `description` | string | 否 | 无 | 说明。 |
 
-`instance_group` 不支持 `attack_ratio`。
+`instance_group` 不支持 `attack_ratio`。`params` 在 v0.1 中只作为纯 JSON 数据透传，不承载脚本、hook、插件或攻击比例控制语义；Phase 2 drift 校验应继续拦截这类字段。
 
 ### 4.10 `time_profile`
 

@@ -14,12 +14,12 @@ package rewrite
 // with one cursed wheel.
 
 #Context: close({
-	global: *{} | #GlobalContextScope
-	system: *{} | {
+	global: *close({}) | #GlobalContextScope
+	system: *close({}) | {
 		[SystemID=#Identifier]: #SystemContextScope
 	}
-	instance: *{} | {
+	instance: *close({}) | {
 		[ScopeID=#Identifier]: #InstanceContextScope
 	}
-	event: *{} | #EventContextScope
+	event: *close({}) | #EventContextScope
 })
