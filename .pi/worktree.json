@@ -1,0 +1,10 @@
+{
+  "dir": ".worktrees",
+  "branchPrefix": "worktree/",
+  "linkEnvFiles": true,
+  "postCreate": [
+    "cargo fetch",
+    "cargo check"
+  ],
+  "preRemove": []
+}
