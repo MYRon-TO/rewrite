@@ -8,9 +8,20 @@ package rewrite
 	system: #Identifier
 	start:  #Identifier
 
-	attack: *{enabled: false} | #MachineAttack
+	// Attack metadata is only a default label source. It must not encode an
+	// attack flow; the flow remains inside states and transitions.
+	attack: #MachineAttack
 
 	states: [StateID=#Identifier]: #State
+
+	// If attack support is disabled, the machine must not contain attack states.
+	// This keeps attack modeling local and explicit instead of letting a disabled
+	// attack block silently coexist with attack-labeled behavior.
+	if attack.enabled == false {
+		states: [StateID=#Identifier]: {
+			kind: *"benign" | "benign"
+		}
+	}
 
 	description?: string
 })
@@ -26,7 +37,13 @@ package rewrite
 #State: close({
 	kind: *"benign" | "benign" | "attack"
 
+	// State-level labels are overrides for attack states only. Benign states must
+	// not carry attack metadata; otherwise templates and labels start leaking into
+	// each other like a badly packed lunchbox.
 	attack_label?: #AttackLabel
+	if kind != "attack" {
+		attack_label?: _|_
+	}
 
 	emit: *[] | [...#Emit]
 	transitions: *[] | [...#Transition]
