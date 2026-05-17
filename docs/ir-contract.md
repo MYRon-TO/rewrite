@@ -184,6 +184,15 @@ IR v0.1 的固定原则：
 {"ref": "ctx.global.tenant_id"}
 ```
 
+上下文引用必须遵守生命周期方向：
+
+- `context.global.*` 只能引用 `ctx.global.*`。
+- `context.system.*` 可以引用 `ctx.global.*` 或 `ctx.system.*`。
+- `context.instance.*` 可以引用 `ctx.global.*`、`ctx.system.*` 或 `ctx.instance.*`。
+- `context.event.*` 可以引用任意 `ctx.global/system/instance/event.*`。
+
+这样可以避免长生命周期变量依赖短生命周期变量。
+
 ### 4.4 `template`
 
 ```json
@@ -223,7 +232,7 @@ IR v0.1 的固定原则：
 {"interpolate": "user=${ctx.instance.user}"}
 ```
 
-`template` 不允许声明共享策略，不判断攻击，不包含脚本。
+`interpolate` 只允许纯文本加 `${ctx.<scope>.<name>}` 占位符，不能使用 `${exec...}`、`${script...}` 或其他非上下文表达式。`template` 不允许声明共享策略，不判断攻击，不包含脚本或 hook/plugin 字段。
 
 ### 4.5 `machine`
 

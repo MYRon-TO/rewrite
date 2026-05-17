@@ -17,6 +17,106 @@ package rewrite
 
 #ContextRef: =~"^ctx\\.(global|system|instance|event)\\.[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
 
+// Context references use the normalized IR form ctx.<scope>.<name>[.<field>...].
+// Scope-specific variants are used by context.cue to prevent long-lived values
+// from depending on shorter-lived values. For example, a global context value
+// may not reference ctx.event.*.
+#GlobalContextRef:   =~"^ctx\\.global\\.[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+#SystemContextRef:   =~"^ctx\\.(global|system)\\.[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+#InstanceContextRef: =~"^ctx\\.(global|system|instance)\\.[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+#EventContextRef:    #ContextRef
+
+// A template interpolation is intentionally tiny: plain text plus at least one
+// ${ctx.<scope>.<name>} placeholder. This rejects ${...} placeholders that are
+// not context references, so interpolation cannot quietly turn into a second
+// expression language.
+#InterpolationTemplate: string & =~"^([^$]|\\$[^\\{])*(\\$\\{ctx\\.(global|system|instance|event)\\.[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*\\}([^$]|\\$[^\\{])*)+$"
+
+// Shared source-expression variants used by context and template schemas.
+#ConstValueSource: close({
+	const: #JSON
+})
+
+#GeneratorValueSource: close({
+	generator: #Identifier
+	params:    *{} | #JSONObject
+})
+
+#ContextRefValueSource: close({
+	ref: #ContextRef
+})
+
+#GlobalContextRefValueSource: close({
+	ref: #GlobalContextRef
+})
+
+#SystemContextRefValueSource: close({
+	ref: #SystemContextRef
+})
+
+#InstanceContextRefValueSource: close({
+	ref: #InstanceContextRef
+})
+
+#EventContextRefValueSource: close({
+	ref: #EventContextRef
+})
+
+#TemplateConstExpr: close({
+	const: #JSON
+})
+
+#TemplateContextRefExpr: close({
+	ref: #ContextRef
+})
+
+#TemplateInterpolationExpr: close({
+	interpolate: #InterpolationTemplate
+})
+
+#TemplateValueExpr: #TemplateConstExpr | #TemplateContextRefExpr | #TemplateInterpolationExpr
+
+#ContextValueSource:         #ConstValueSource | #GeneratorValueSource | #ContextRefValueSource
+#GlobalContextValueSource:   #ConstValueSource | #GeneratorValueSource | #GlobalContextRefValueSource
+#SystemContextValueSource:   #ConstValueSource | #GeneratorValueSource | #SystemContextRefValueSource
+#InstanceContextValueSource: #ConstValueSource | #GeneratorValueSource | #InstanceContextRefValueSource
+#EventContextValueSource:    #ConstValueSource | #GeneratorValueSource | #EventContextRefValueSource
+
+#TemplateFieldName:   #FieldName & !="shared" & !="share" & !="scope" & !="cache" & !="script" & !="hook" & !="plugin"
+#ContextVariableName: #FieldName
+
+#TemplateFields:       [Name=#TemplateFieldName]: #TemplateValueExpr
+#ContextScope:         [Name=#ContextVariableName]: #ContextVariable
+#GlobalContextScope:   [Name=#ContextVariableName]: #GlobalContextVariable
+#SystemContextScope:   [Name=#ContextVariableName]: #SystemContextVariable
+#InstanceContextScope: [Name=#ContextVariableName]: #InstanceContextVariable
+#EventContextScope:    [Name=#ContextVariableName]: #EventContextVariable
+
+#ContextVariable: close({
+	source:       #ContextValueSource
+	description?: string
+})
+
+#GlobalContextVariable: close({
+	source:       #GlobalContextValueSource
+	description?: string
+})
+
+#SystemContextVariable: close({
+	source:       #SystemContextValueSource
+	description?: string
+})
+
+#InstanceContextVariable: close({
+	source:       #InstanceContextValueSource
+	description?: string
+})
+
+#EventContextVariable: close({
+	source:       #EventContextValueSource
+	description?: string
+})
+
 // Closed schema for the exported JSON IR. CUE source files are merged at the
 // package root, so top-level closure is enforced by validating the exported JSON
 // against this definition in scripts/export-ir.sh.
