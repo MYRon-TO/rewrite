@@ -7,6 +7,7 @@ Usage:
   scripts/export-ir.sh [cue/examples/name.cue ...]
 
 Export CUE example definitions to normalized JSON IR without involving Rust.
+The exported JSON is validated against cue/schema #IR when schema files are included.
 
 Defaults:
   - input examples: cue/examples/*.cue
@@ -86,7 +87,7 @@ for example in "${examples[@]}"; do
   filename="$(basename "$example")"
   stem="${filename%.cue}"
   out_file="$out_dir/${stem}.json"
-  tmp_file="$out_file.tmp.$$"
+  tmp_file="$out_file.tmp.$$.json"
 
   cmd=(cue export -E --out json --outfile "$tmp_file")
   if [[ -n "$export_expr" ]]; then
@@ -97,6 +98,15 @@ for example in "${examples[@]}"; do
   echo "[cue-export] exporting $example -> $out_file"
   print_cmd "${cmd[@]}"
   if "${cmd[@]}"; then
+    if ((${#schema_files[@]} > 0)); then
+      vet_cmd=(cue vet -E -c -d '#IR' "${schema_files[@]}" "$tmp_file")
+      echo "[cue-export] validating exported IR against #IR"
+      print_cmd "${vet_cmd[@]}"
+      if ! "${vet_cmd[@]}"; then
+        rm -f "$tmp_file"
+        exit 1
+      fi
+    fi
     mv "$tmp_file" "$out_file"
   else
     rm -f "$tmp_file"
