@@ -195,6 +195,9 @@ pub enum RuntimeError {
         machine_id: String,
         max_steps: usize,
     },
+
+    #[error("invalid context value at {location}: {message}")]
+    InvalidContextValue { location: String, message: String },
 }
 
 impl RuntimeError {
@@ -233,6 +236,13 @@ impl RuntimeError {
         Self::StepLimitExceeded {
             machine_id: machine_id.into(),
             max_steps,
+        }
+    }
+
+    pub fn invalid_context_value(location: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InvalidContextValue {
+            location: location.into(),
+            message: message.into(),
         }
     }
 }
