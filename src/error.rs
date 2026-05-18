@@ -202,6 +202,13 @@ pub enum RuntimeError {
         field: String,
         message: String,
     },
+
+    #[error("invalid value expression at {location}.{field}: {message}")]
+    InvalidValueExpression {
+        location: String,
+        field: String,
+        message: String,
+    },
 }
 
 impl RuntimeError {
@@ -250,6 +257,18 @@ impl RuntimeError {
     ) -> Self {
         Self::InvalidTimeProfile {
             profile_id: profile_id.into(),
+            field: field.into(),
+            message: message.into(),
+        }
+    }
+
+    pub fn invalid_value_expression(
+        location: impl Into<String>,
+        field: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::InvalidValueExpression {
+            location: location.into(),
             field: field.into(),
             message: message.into(),
         }
