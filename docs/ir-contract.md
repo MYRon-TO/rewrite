@@ -435,11 +435,13 @@ Phase 3 后冻结的 MVP 内置 generator 类型如下：
 |---|---:|---:|---:|---|
 | `id` | string | 是 | 无 | time_profile ID。 |
 | `start` | string | 是 | 无 | 全局起始时间，建议 RFC3339。 |
-| `timezone` | string | 是 | `UTC` | 时区名。 |
+| `timezone` | string | 是 | `UTC` | 时区名；MVP 中仅作为声明性元数据保留，不参与时间计算。运行时以 `start` 的 RFC3339 offset 为准，并统一转换为 UTC 内部时间。 |
 | `granularity` | string | 是 | `millisecond` | `second`、`millisecond`、`microsecond`、`nanosecond`。 |
 | `monotonic_per_instance` | bool | 是 | `true` | 单实例时间是否单调。 |
 | `system_clock_skew` | map | 是 | `{}` | system 级 clock skew。 |
 | `description` | string | 否 | 无 | 说明。 |
+
+注意：`timezone` 当前不是调度输入，也不改变输出时间格式；不要用它表达本地时间、夏令时或跨系统时间窗口。要是把它当时间魔法开关，最后只会得到一台很自信但不准的钟。
 
 clock skew 支持固定值：
 

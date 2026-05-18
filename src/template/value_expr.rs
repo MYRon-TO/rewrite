@@ -120,7 +120,7 @@ impl Interpolation {
 
     pub fn render(
         &self,
-        resolver: &impl ContextValueResolver,
+        resolver: &mut impl ContextValueResolver,
         location: impl Into<String>,
     ) -> Result<String, RuntimeError> {
         let location = location.into();
@@ -153,7 +153,7 @@ pub enum InterpolationPart {
 /// runtime orchestration.
 pub trait ContextValueResolver {
     fn resolve_context_value(
-        &self,
+        &mut self,
         reference: &ContextRef,
         location: &str,
     ) -> Result<Value, RuntimeError>;
@@ -218,7 +218,7 @@ pub fn parse_interpolation_refs(
 /// Evaluate one template field expression into a JSON value.
 pub fn eval_template_value_expr(
     expr: &TemplateValueExpr,
-    resolver: &impl ContextValueResolver,
+    resolver: &mut impl ContextValueResolver,
     location: impl Into<String>,
 ) -> Result<Value, RuntimeError> {
     let location = location.into();
@@ -241,7 +241,7 @@ pub fn eval_template_value_expr(
 /// `None` here keeps this module focused on constants and references only.
 pub fn eval_static_or_ref_source(
     source: &ValueSource,
-    resolver: &impl ContextValueResolver,
+    resolver: &mut impl ContextValueResolver,
     location: impl Into<String>,
 ) -> Result<Option<Value>, RuntimeError> {
     let location = location.into();
@@ -298,7 +298,7 @@ mod tests {
 
     impl ContextValueResolver for MapResolver {
         fn resolve_context_value(
-            &self,
+            &mut self,
             reference: &ContextRef,
             location: &str,
         ) -> Result<Value, RuntimeError> {
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn evaluates_const_ref_and_interpolation() {
-        let resolver = MapResolver::default()
+        let mut resolver = MapResolver::default()
             .with("ctx.instance.user", json!("alice"))
             .with("ctx.event.src_ip", json!("10.0.0.5"))
             .with("ctx.event.port", json!(22));
@@ -387,28 +387,32 @@ mod tests {
         });
 
         assert_eq!(
-            eval_template_value_expr(&const_expr, &resolver, "template.t.fields.flag").unwrap(),
+            eval_template_value_expr(&const_expr, &mut resolver, "template.t.fields.flag").unwrap(),
             json!(true)
         );
         assert_eq!(
-            eval_template_value_expr(&ref_expr, &resolver, "template.t.fields.user").unwrap(),
+            eval_template_value_expr(&ref_expr, &mut resolver, "template.t.fields.user").unwrap(),
             json!("alice")
         );
         assert_eq!(
-            eval_template_value_expr(&interpolation_expr, &resolver, "template.t.fields.message")
-                .unwrap(),
+            eval_template_value_expr(
+                &interpolation_expr,
+                &mut resolver,
+                "template.t.fields.message"
+            )
+            .unwrap(),
             json!("user=alice src=10.0.0.5 port=22")
         );
     }
 
     #[test]
     fn missing_ref_comes_from_resolver() {
-        let resolver = MapResolver::default();
+        let mut resolver = MapResolver::default();
         let expr = TemplateValueExpr::Ref(ContextRefValue {
             reference: "ctx.global.tenant".to_owned(),
         });
 
-        let err = eval_template_value_expr(&expr, &resolver, "template.t.fields.tenant")
+        let err = eval_template_value_expr(&expr, &mut resolver, "template.t.fields.tenant")
             .expect_err("missing context value");
 
         assert!(matches!(err, RuntimeError::MissingContextVariable { .. }));
