@@ -25,12 +25,13 @@ impl ContextScope {
     }
 }
 
-/// Parsed `ctx.<scope>.<name>` reference.
+/// Parsed `ctx.<scope>.<name>[.<field>...]` reference.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ContextRef {
     raw: String,
     scope: ContextScope,
     name: String,
+    path: Vec<String>,
 }
 
 impl ContextRef {
@@ -48,6 +49,10 @@ impl ContextRef {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn path(&self) -> &[String] {
+        &self.path
     }
 }
 
@@ -154,7 +159,7 @@ pub trait ContextValueResolver {
     ) -> Result<Value, RuntimeError>;
 }
 
-/// Parse a raw `ctx.<scope>.<name>` reference.
+/// Parse a raw `ctx.<scope>.<name>[.<field>...]` reference.
 pub fn parse_context_ref(
     raw: &str,
     location: impl Into<String>,
@@ -163,11 +168,17 @@ pub fn parse_context_ref(
     let location = location.into();
     let field = field.into();
     let parts = raw.split('.').collect::<Vec<_>>();
-    if parts.len() != 3 || parts[0] != "ctx" || parts[2].is_empty() {
+    if parts.len() < 3
+        || parts[0] != "ctx"
+        || parts[2].is_empty()
+        || parts[3..].iter().any(|part| part.is_empty())
+    {
         return Err(invalid_expr(
             location,
             field,
-            format!("expected context reference in form `ctx.<scope>.<name>`, got `{raw}`"),
+            format!(
+                "expected context reference in form `ctx.<scope>.<name>[.<field>...]`, got `{raw}`"
+            ),
         ));
     }
 
@@ -189,6 +200,7 @@ pub fn parse_context_ref(
         raw: raw.to_owned(),
         scope,
         name: parts[2].to_owned(),
+        path: parts[3..].iter().map(|part| (*part).to_owned()).collect(),
     })
 }
 
@@ -308,6 +320,22 @@ mod tests {
         assert_eq!(reference.raw(), "ctx.instance.user");
         assert_eq!(reference.scope(), ContextScope::Instance);
         assert_eq!(reference.name(), "user");
+        assert!(reference.path().is_empty());
+    }
+
+    #[test]
+    fn parses_context_ref_with_field_path() {
+        let reference = parse_context_ref(
+            "ctx.global.actor.user_id",
+            "template.t.fields.actor_user_id",
+            "ref",
+        )
+        .expect("valid nested ref");
+
+        assert_eq!(reference.raw(), "ctx.global.actor.user_id");
+        assert_eq!(reference.scope(), ContextScope::Global);
+        assert_eq!(reference.name(), "actor");
+        assert_eq!(reference.path(), &["user_id".to_string()]);
     }
 
     #[test]

@@ -45,6 +45,7 @@ impl InstanceKey {
 struct ContextRef {
     scope: ContextScope,
     name: String,
+    path: Vec<String>,
 }
 
 /// Pluggable value generator used by the context store.
@@ -166,25 +167,27 @@ impl<'ir> ContextStore<'ir> {
         event: &EventContext,
         generator: &mut impl ContextValueGenerator,
     ) -> Result<Value, RuntimeError> {
-        let reference = parse_ref(reference)?;
-        match reference.scope {
-            ContextScope::Global => self.global_value(&reference.name, generator),
-            ContextScope::System => self.system_value(&event.system_id, &reference.name, generator),
+        let parsed = parse_ref(reference)?;
+        let value = match parsed.scope {
+            ContextScope::Global => self.global_value(&parsed.name, generator),
+            ContextScope::System => self.system_value(&event.system_id, &parsed.name, generator),
             ContextScope::Instance => self.instance_value(
                 &event.system_id,
                 &event.machine_id,
                 &event.instance_id,
-                &reference.name,
+                &parsed.name,
                 generator,
             ),
-            ContextScope::Event => event.event_value(&reference.name).cloned().ok_or_else(|| {
+            ContextScope::Event => event.event_value(&parsed.name).cloned().ok_or_else(|| {
                 missing(
                     ContextScope::Event,
-                    &reference.name,
+                    &parsed.name,
                     format!("event.{}", event.instance_id),
                 )
             }),
-        }
+        }?;
+
+        extract_ref_path(value, &parsed.path, reference)
     }
 
     fn resolve_global(
@@ -377,14 +380,15 @@ impl<'ir> ContextStore<'ir> {
                     .cloned()
                     .map(Ok)
                     .unwrap_or_else(|| parse_ref(&source.reference))?;
-                self.resolve_ref(
+                let value = self.resolve_ref(
                     system_id,
                     instance,
                     event_values,
                     &reference,
                     generator,
                     stack,
-                )
+                )?;
+                extract_ref_path(value, &reference.path, &source.reference)
             }
         }
     }
@@ -481,23 +485,24 @@ impl EventContext {
 }
 
 fn parse_ref(reference: &str) -> Result<ContextRef, RuntimeError> {
-    let mut parts = reference.split('.');
-    let prefix = parts.next();
-    let scope = parts.next();
-    let name = parts.next();
+    let parts = reference.split('.').collect::<Vec<_>>();
 
-    if prefix != Some("ctx") || parts.next().is_some() {
+    if parts.len() < 3
+        || parts[0] != "ctx"
+        || parts[2].is_empty()
+        || parts[3..].iter().any(|part| part.is_empty())
+    {
         return Err(RuntimeError::invalid_context_value(
             reference,
-            "context ref must use ctx.<global|system|instance|event>.<name>",
+            "context ref must use ctx.<global|system|instance|event>.<name>[.<field>...]",
         ));
     }
 
-    let scope = match scope {
-        Some("global") => ContextScope::Global,
-        Some("system") => ContextScope::System,
-        Some("instance") => ContextScope::Instance,
-        Some("event") => ContextScope::Event,
+    let scope = match parts[1] {
+        "global" => ContextScope::Global,
+        "system" => ContextScope::System,
+        "instance" => ContextScope::Instance,
+        "event" => ContextScope::Event,
         _ => {
             return Err(RuntimeError::invalid_context_value(
                 reference,
@@ -505,14 +510,51 @@ fn parse_ref(reference: &str) -> Result<ContextRef, RuntimeError> {
             ));
         }
     };
-    let name = name.filter(|value| !value.is_empty()).ok_or_else(|| {
-        RuntimeError::invalid_context_value(reference, "context variable name is empty")
-    })?;
 
     Ok(ContextRef {
         scope,
-        name: name.to_string(),
+        name: parts[2].to_string(),
+        path: parts[3..].iter().map(|part| (*part).to_owned()).collect(),
     })
+}
+
+fn extract_ref_path(
+    mut value: Value,
+    path: &[String],
+    reference: &str,
+) -> Result<Value, RuntimeError> {
+    for segment in path {
+        value = match value {
+            Value::Object(mut object) => object.remove(segment).ok_or_else(|| {
+                RuntimeError::invalid_context_value(
+                    reference,
+                    format!("context ref path segment `{segment}` does not exist"),
+                )
+            })?,
+            other => {
+                return Err(RuntimeError::invalid_context_value(
+                    reference,
+                    format!(
+                        "context ref path segment `{segment}` requires an object, got {}",
+                        value_kind(&other)
+                    ),
+                ));
+            }
+        };
+    }
+
+    Ok(value)
+}
+
+fn value_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
 }
 
 fn enter_stack(stack: &mut BTreeSet<String>, location: &str) -> Result<(), RuntimeError> {
@@ -607,7 +649,13 @@ mod tests {
                 ),
             ]),
             context: Context {
-                global: BTreeMap::from([("tenant".to_string(), const_var(json!("acme")))]),
+                global: BTreeMap::from([
+                    ("tenant".to_string(), const_var(json!("acme"))),
+                    (
+                        "actor".to_string(),
+                        const_var(json!({"user_id":"u-1","profile":{"role":"admin"}})),
+                    ),
+                ]),
                 system: BTreeMap::from([(
                     "linux".to_string(),
                     BTreeMap::from([
@@ -715,6 +763,29 @@ mod tests {
                 .value_for_ref("ctx.event.pid", &event, &mut value_gen)
                 .unwrap(),
             event.event_value("pid").cloned().unwrap()
+        );
+    }
+
+    #[test]
+    fn public_ref_resolution_supports_field_paths() {
+        let ir = test_ir();
+        let mut store = ContextStore::new(&ir);
+        let mut value_gen = CountingGenerator::default();
+        let event = store
+            .event_context("linux", "login", "i-1", &mut value_gen)
+            .unwrap();
+
+        assert_eq!(
+            store
+                .value_for_ref("ctx.global.actor.user_id", &event, &mut value_gen)
+                .unwrap(),
+            json!("u-1")
+        );
+        assert_eq!(
+            store
+                .value_for_ref("ctx.global.actor.profile.role", &event, &mut value_gen)
+                .unwrap(),
+            json!("admin")
         );
     }
 

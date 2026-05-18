@@ -9,9 +9,26 @@ use crate::{
     ir::{Generator, JsonObject},
 };
 
+pub const BUILTIN_GENERATOR_TYPES: &[&str] = &[
+    "fixed",
+    "const",
+    "choice",
+    "number_range",
+    "range",
+    "ipv4",
+    "username",
+    "simple_username",
+    "uuid",
+    "session_id",
+];
+
 const DEFAULT_USERNAME_A: [&str; 3] = ["blue", "green", "silver"];
 const DEFAULT_USERNAME_B: [&str; 3] = ["fox", "panda", "otter"];
 const UUID_HEX: &[u8; 16] = b"0123456789abcdef";
+
+pub fn is_builtin_generator_type(generator_type: &str) -> bool {
+    BUILTIN_GENERATOR_TYPES.contains(&generator_type)
+}
 
 #[derive(Debug)]
 pub struct BuiltinGenerator {

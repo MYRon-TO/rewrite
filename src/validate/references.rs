@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::error::{Result, ValidationError};
+use crate::generator::is_builtin_generator_type;
 use crate::ir::{Ir, TemplateValueExpr, ValueSource};
 
 /// Validate cross-object references and context-variable references in an IR.
@@ -10,6 +11,7 @@ pub fn validate_references(ir: &Ir) -> Result<()> {
     let index = ReferenceIndex::new(ir);
 
     validate_scenario_references(ir, &index)?;
+    validate_generator_types(ir)?;
     validate_context_references(ir, &index)?;
     validate_template_references(ir, &index)?;
     validate_machine_references(ir, &index)?;
@@ -74,6 +76,24 @@ fn validate_scenario_references(ir: &Ir, index: &ReferenceIndex<'_>) -> Result<(
         "time_profile",
         &ir.scenario.time_profile,
     )
+}
+
+fn validate_generator_types(ir: &Ir) -> Result<()> {
+    for (generator_id, generator) in &ir.generators {
+        if !is_builtin_generator_type(&generator.generator_type) {
+            return Err(ValidationError::invalid_value(
+                format!("generator.{generator_id}"),
+                "type",
+                format!(
+                    "unsupported builtin generator type `{}`; Phase 3 freezes the MVP set",
+                    generator.generator_type
+                ),
+            )
+            .into());
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_context_references(ir: &Ir, index: &ReferenceIndex<'_>) -> Result<()> {
@@ -447,11 +467,17 @@ fn validate_context_ref(
 
 fn parse_context_ref(raw: &str, owner: &str, field: &'static str) -> Result<ContextRef> {
     let parts = raw.split('.').collect::<Vec<_>>();
-    if parts.len() != 3 || parts[0] != "ctx" || parts[2].is_empty() {
+    if parts.len() < 3
+        || parts[0] != "ctx"
+        || parts[2].is_empty()
+        || parts[3..].iter().any(|part| part.is_empty())
+    {
         return Err(ValidationError::invalid_value(
             owner,
             field,
-            format!("expected context reference in form `ctx.<scope>.<name>`, got `{raw}`"),
+            format!(
+                "expected context reference in form `ctx.<scope>.<name>[.<field>...]`, got `{raw}`"
+            ),
         )
         .into());
     }
@@ -646,6 +672,49 @@ mod tests {
             err.to_string()
                 .contains("missing context variable reference `ctx.instance.user`")
         );
+    }
+
+    #[test]
+    fn context_ref_with_field_path_checks_base_variable() {
+        let mut ir = generated_ir();
+        ir.context.global.insert(
+            "actor".to_owned(),
+            crate::ir::ContextVariable {
+                source: ValueSource::Const(crate::ir::ConstValue {
+                    value: serde_json::json!({"user_id":"u-1"}),
+                }),
+                description: None,
+            },
+        );
+        ir.templates
+            .get_mut("ssh_login_success")
+            .unwrap()
+            .fields
+            .insert(
+                "actor_user_id".to_owned(),
+                crate::ir::TemplateValueExpr::Ref(crate::ir::ContextRefValue {
+                    reference: "ctx.global.actor.user_id".to_owned(),
+                }),
+            );
+
+        validate_references(&ir).expect("base context variable exists");
+    }
+
+    #[test]
+    fn unknown_generator_type_is_rejected_after_phase_3_freeze() {
+        let mut ir = generated_ir();
+        ir.generators
+            .get_mut("username_pool")
+            .unwrap()
+            .generator_type = "plugin_magic".to_owned();
+
+        let err = validate_references(&ir).expect_err("unknown generator type must fail");
+
+        assert!(
+            err.to_string()
+                .contains("unsupported builtin generator type")
+        );
+        assert!(err.to_string().contains("plugin_magic"));
     }
 
     #[test]

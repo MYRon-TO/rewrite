@@ -255,6 +255,10 @@ impl RuntimeError {
     pub fn invalid_context_value(location: impl Into<String>, message: impl Into<String>) -> Self {
         Self::InvalidContextValue {
             location: location.into(),
+            message: message.into(),
+        }
+    }
+
     pub fn invalid_time_profile(
         profile_id: impl Into<String>,
         field: impl Into<String>,

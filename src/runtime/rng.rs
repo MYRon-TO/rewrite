@@ -1,4 +1,4 @@
-use rand::{Rng, RngExt, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 /// Seed used when the CLI does not provide one.
 ///

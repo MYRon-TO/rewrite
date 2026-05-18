@@ -7,10 +7,11 @@ package rewrite
 #Generator: close({
 	id: #Identifier
 
-	// Built-in generator type name. The exact built-in set is frozen later by
-	// the runtime generator phase.
-	type: #Identifier
+	// Built-in generator type name. Phase 3 freezes the MVP built-in set.
+	type: #BuiltinGeneratorType
 
 	params: *{} | #JSONObject
 	description?: string
 })
+
+#BuiltinGeneratorType: "fixed" | "const" | "choice" | "number_range" | "range" | "ipv4" | "username" | "simple_username" | "uuid" | "session_id"

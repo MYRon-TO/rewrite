@@ -8,7 +8,7 @@ IR v0.1 的固定原则：
 
 1. 顶层结构固定。
 2. 对象集合使用 map，key 为对象 ID。
-3. 引用统一使用字符串 ID 或 `ctx.<scope>.<name>`。
+3. 引用统一使用字符串 ID 或 `ctx.<scope>.<name>[.<field>...]`。
 4. 默认值应在导出的 JSON 中展开。
 5. IR 不包含执行逻辑、脚本、跨系统因果、攻击链对象或攻击比例控制。
 
@@ -119,6 +119,20 @@ IR v0.1 的固定原则：
 
 `generator` 只声明值来源契约，不包含代码、hook、插件或外部调用。`params` 在 v0.1 中按纯 JSON 数据处理；即使出现 `script`、`hook`、`plugin` 等键也不会被执行，Phase 2 的 drift 校验应继续拒绝这类越界意图。
 
+Phase 3 后冻结的 MVP 内置 generator 类型如下：
+
+| 类型名 | 说明 |
+|---|---|
+| `fixed` / `const` | 返回 `params.value`。 |
+| `choice` | 从 `params.values` 数组中随机选择一个值。 |
+| `number_range` / `range` | 从整数闭区间 `[params.min, params.max]` 中随机选择一个值。 |
+| `ipv4` | 生成 IPv4，支持 `params.cidr` 或 `params.start`/`params.end`。 |
+| `username` / `simple_username` | 生成简单用户名，可用 `params.a`、`params.b` 覆盖词表。 |
+| `uuid` | 生成 UUID v4 字符串。 |
+| `session_id` | 生成带 `sess-` 前缀的 session id。 |
+
+上述别名也属于冻结合约的一部分。新增 generator 类型必须通过后续 IR 版本或显式兼容变更进入，不能在 v0.1 里偷偷塞插件；这不是扩展性，这是把门拆了还说通风好。
+
 ### 4.3 `context`
 
 ```json
@@ -184,6 +198,8 @@ IR v0.1 的固定原则：
 {"ref": "ctx.global.tenant_id"}
 ```
 
+上下文引用格式为 `ctx.<scope>.<name>[.<field>...]`。其中 `<name>` 是 context 变量名，后续 `<field>` 是可选的对象字段路径，例如 `ctx.global.actor.user_id` 表示读取 `ctx.global.actor` 这个变量里的 `user_id` 字段。静态校验只检查变量是否存在，字段路径是否存在由运行时解析值时检查。
+
 上下文引用必须遵守生命周期方向：
 
 - `context.global.*` 只能引用 `ctx.global.*`。
@@ -229,10 +245,14 @@ IR v0.1 的固定原则：
 ```
 
 ```json
+{"ref": "ctx.global.actor.user_id"}
+```
+
+```json
 {"interpolate": "user=${ctx.instance.user}"}
 ```
 
-`interpolate` 只允许纯文本加 `${ctx.<scope>.<name>}` 占位符，不能使用 `${exec...}`、`${script...}` 或其他非上下文表达式。`template` 不允许声明共享策略，不判断攻击，不包含脚本或 hook/plugin 字段。
+`interpolate` 只允许纯文本加 `${ctx.<scope>.<name>[.<field>...]}` 占位符，不能使用 `${exec...}`、`${script...}` 或其他非上下文表达式。`template` 不允许声明共享策略，不判断攻击，不包含脚本或 hook/plugin 字段。
 
 ### 4.5 `machine`
 
