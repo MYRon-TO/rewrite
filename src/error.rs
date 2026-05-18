@@ -198,6 +198,19 @@ pub enum RuntimeError {
 
     #[error("invalid context value at {location}: {message}")]
     InvalidContextValue { location: String, message: String },
+    #[error("invalid time profile `{profile_id}` at {field}: {message}")]
+    InvalidTimeProfile {
+        profile_id: String,
+        field: String,
+        message: String,
+    },
+
+    #[error("invalid value expression at {location}.{field}: {message}")]
+    InvalidValueExpression {
+        location: String,
+        field: String,
+        message: String,
+    },
 }
 
 impl RuntimeError {
@@ -242,6 +255,26 @@ impl RuntimeError {
     pub fn invalid_context_value(location: impl Into<String>, message: impl Into<String>) -> Self {
         Self::InvalidContextValue {
             location: location.into(),
+    pub fn invalid_time_profile(
+        profile_id: impl Into<String>,
+        field: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::InvalidTimeProfile {
+            profile_id: profile_id.into(),
+            field: field.into(),
+            message: message.into(),
+        }
+    }
+
+    pub fn invalid_value_expression(
+        location: impl Into<String>,
+        field: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::InvalidValueExpression {
+            location: location.into(),
+            field: field.into(),
             message: message.into(),
         }
     }
