@@ -195,6 +195,13 @@ pub enum RuntimeError {
         machine_id: String,
         max_steps: usize,
     },
+
+    #[error("invalid time profile `{profile_id}` at {field}: {message}")]
+    InvalidTimeProfile {
+        profile_id: String,
+        field: String,
+        message: String,
+    },
 }
 
 impl RuntimeError {
@@ -233,6 +240,18 @@ impl RuntimeError {
         Self::StepLimitExceeded {
             machine_id: machine_id.into(),
             max_steps,
+        }
+    }
+
+    pub fn invalid_time_profile(
+        profile_id: impl Into<String>,
+        field: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::InvalidTimeProfile {
+            profile_id: profile_id.into(),
+            field: field.into(),
+            message: message.into(),
         }
     }
 }
