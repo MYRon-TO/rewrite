@@ -4,38 +4,45 @@ use crate::error::ValidationError;
 
 /// Validate that raw IR JSON does not contain fields/objects that are outside the MVP boundary.
 ///
-/// This intentionally works on `serde_json::Value` instead of typed IR structs so drift hidden in
-/// flexible JSON maps such as `generator.params`, `instance_group.params`, `template.fields`, or
-/// `const` payloads is not silently accepted. Typed deserialization with `deny_unknown_fields` is
-/// still responsible for ordinary schema mismatch; this module reports explicit MVP-boundary
-/// violations with a clearer error category.
+/// This intentionally works on `serde_json::Value` instead of typed IR structs, but it only scans
+/// structural IR fields. Flexible business-data payloads such as `params`, `template.fields`, and
+/// `const` values are ignored here to avoid rejecting ordinary log field names. Typed
+/// deserialization with `deny_unknown_fields` is still responsible for ordinary schema mismatch;
+/// this module reports explicit MVP-boundary violations with a clearer error category.
 pub fn validate_drift(raw: &Value) -> Result<(), ValidationError> {
-    scan_value(raw, "$")
+    scan_value(raw, "$", false)
 }
 
-fn scan_value(value: &Value, location: &str) -> Result<(), ValidationError> {
+fn scan_value(value: &Value, location: &str, data_payload: bool) -> Result<(), ValidationError> {
     match value {
         Value::Object(object) => {
             for (field, child) in object {
-                if let Some(message) = forbidden_field_message(field) {
-                    return Err(ValidationError::drift(location, field, message));
+                if !data_payload {
+                    if let Some(message) = forbidden_field_message(field) {
+                        return Err(ValidationError::drift(location, field, message));
+                    }
                 }
 
                 let child_location = child_location(location, field);
-                scan_value(child, &child_location)?;
+                let child_is_data_payload = data_payload || is_data_payload_field(field);
+                scan_value(child, &child_location, child_is_data_payload)?;
             }
 
             Ok(())
         }
         Value::Array(items) => {
             for (index, child) in items.iter().enumerate() {
-                scan_value(child, &format!("{location}[{index}]"))?;
+                scan_value(child, &format!("{location}[{index}]"), data_payload)?;
             }
 
             Ok(())
         }
         _ => Ok(()),
     }
+}
+
+fn is_data_payload_field(field: &str) -> bool {
+    matches!(field, "params" | "fields" | "const")
 }
 
 fn forbidden_field_message(field: &str) -> Option<&'static str> {
@@ -185,17 +192,14 @@ mod tests {
     }
 
     #[test]
-    fn rejects_hidden_script_in_generator_params() {
+    fn allows_forbidden_words_inside_data_payloads() {
         let mut value = generated_value();
-        value["generators"]["username_pool"]["params"]["script"] = json!("return 'root'");
+        value["generators"]["username_pool"]["params"]["script"] = json!("literal string only");
+        value["templates"]["ssh_login_success"]["fields"]["stage"] = json!({"const": "prod"});
+        value["templates"]["ssh_login_success"]["fields"]["payload"] =
+            json!({"const": {"external": true}});
 
-        let err = validate_drift(&value).expect_err("script params are outside MVP");
-
-        assert!(
-            err.to_string()
-                .contains("$.generators.username_pool.params")
-        );
-        assert!(err.to_string().contains("field `script`"));
+        validate_drift(&value).expect("drift scan should ignore business data payload keys");
     }
 
     #[test]

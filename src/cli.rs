@@ -9,7 +9,10 @@ use clap::{Arg, ArgAction, Command, value_parser};
 use crate::{
     error::{IrParseError, Result},
     ir::Ir,
-    validate::{MachineValidationWarning, validate_drift, validate_machines, validate_references},
+    validate::{
+        MachineValidationWarning, validate_drift, validate_identity, validate_machines,
+        validate_references,
+    },
 };
 
 pub fn run() -> Result<()> {
@@ -65,6 +68,7 @@ fn validate_command(ir_path: PathBuf) -> Result<()> {
 
     let ir = Ir::from_json_str(&ir_content, ir_path.display().to_string())?;
 
+    validate_identity(&ir)?;
     validate_references(&ir)?;
     let report = validate_machines(&ir)?;
 

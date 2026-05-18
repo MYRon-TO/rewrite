@@ -14,6 +14,8 @@ pub fn validate_references(ir: &Ir) -> Result<()> {
     validate_template_references(ir, &index)?;
     validate_machine_references(ir, &index)?;
     validate_instance_group_references(ir, &index)?;
+    validate_time_profile_references(ir, &index)?;
+    validate_scenario_system_consistency(ir)?;
 
     Ok(())
 }
@@ -265,6 +267,54 @@ fn validate_instance_group_references(ir: &Ir, index: &ReferenceIndex<'_>) -> Re
             "machine",
             &group.machine,
         )?;
+    }
+
+    Ok(())
+}
+
+fn validate_time_profile_references(ir: &Ir, index: &ReferenceIndex<'_>) -> Result<()> {
+    for (profile_id, profile) in &ir.time_profiles {
+        for system_id in profile.system_clock_skew.keys() {
+            ensure_exists(
+                index.systems.contains(system_id.as_str()),
+                format!("time_profile.{profile_id}.system_clock_skew"),
+                system_id,
+                "system",
+                system_id,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_scenario_system_consistency(ir: &Ir) -> Result<()> {
+    let scenario_systems = ir
+        .scenario
+        .systems
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+
+    for (idx, group_id) in ir.scenario.instance_groups.iter().enumerate() {
+        let Some(group) = ir.instance_groups.get(group_id) else {
+            continue;
+        };
+        let Some(machine) = ir.machines.get(&group.machine) else {
+            continue;
+        };
+
+        if !scenario_systems.contains(machine.system.as_str()) {
+            return Err(ValidationError::invalid_value(
+                format!("scenario.{}", ir.scenario.id),
+                format!("instance_groups[{idx}]"),
+                format!(
+                    "instance_group `{group_id}` uses machine `{}` in system `{}`, but scenario.systems does not include that system",
+                    group.machine, machine.system
+                ),
+            )
+            .into());
+        }
     }
 
     Ok(())
@@ -617,6 +667,55 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("missing generator reference `missing_generator`")
+        );
+    }
+
+    #[test]
+    fn scenario_instance_group_machine_system_must_be_declared_by_scenario() {
+        let mut ir = generated_ir();
+        ir.systems.insert(
+            "other_system".to_owned(),
+            crate::ir::System {
+                id: "other_system".to_owned(),
+                kind: None,
+                description: None,
+            },
+        );
+        ir.machines.get_mut("ssh_login_flow").unwrap().system = "other_system".to_owned();
+        for template in ir.templates.values_mut() {
+            template.system = "other_system".to_owned();
+        }
+        let linux_auth_context = ir.context.system.remove("linux_auth").unwrap();
+        ir.context
+            .system
+            .insert("other_system".to_owned(), linux_auth_context);
+
+        let err = validate_references(&ir).expect_err("scenario must include used system");
+
+        assert!(
+            err.to_string()
+                .contains("scenario.systems does not include")
+        );
+        assert!(err.to_string().contains("other_system"));
+    }
+
+    #[test]
+    fn system_clock_skew_system_key_must_exist() {
+        let mut ir = generated_ir();
+        ir.time_profiles
+            .get_mut("default_time")
+            .unwrap()
+            .system_clock_skew
+            .insert(
+                "missing_system".to_owned(),
+                crate::ir::ClockSkew::Fixed(crate::ir::FixedClockSkew { milliseconds: 0.0 }),
+            );
+
+        let err = validate_references(&ir).expect_err("clock skew system must exist");
+
+        assert!(
+            err.to_string()
+                .contains("missing system reference `missing_system`")
         );
     }
 
