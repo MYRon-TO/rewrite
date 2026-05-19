@@ -3,6 +3,7 @@ pub mod context;
 pub mod error;
 pub mod generator;
 pub mod ir;
+pub mod label;
 pub mod machine;
 pub mod runtime;
 pub mod template;
