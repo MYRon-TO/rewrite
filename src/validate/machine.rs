@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use crate::{
     error::ValidationError,
-    ir::{Ir, Machine},
+    ir::{EmitCount, Ir, Machine, StateKind},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +39,8 @@ pub fn validate_machine(
     machine: &Machine,
 ) -> Result<Vec<MachineValidationWarning>, ValidationError> {
     validate_start_state(machine_id, machine)?;
+    validate_attack_boundaries(machine_id, machine)?;
+    validate_state_emits(machine_id, machine)?;
     validate_state_transitions(machine_id, machine)?;
 
     Ok(find_unreachable_states(machine_id, machine))
@@ -60,6 +62,50 @@ fn validate_start_state(machine_id: &str, machine: &Machine) -> Result<(), Valid
                 machine.start
             ),
         ));
+    }
+
+    Ok(())
+}
+
+fn validate_attack_boundaries(machine_id: &str, machine: &Machine) -> Result<(), ValidationError> {
+    for (state_id, state) in &machine.states {
+        if !machine.attack.enabled && state.kind == StateKind::Attack {
+            return Err(ValidationError::invalid_machine(
+                machine_id,
+                format!(
+                    "attack.enabled is false but state `{state_id}` has kind `attack`; enable machine.attack or make the state benign"
+                ),
+            ));
+        }
+
+        if state.kind == StateKind::Benign && state.attack_label.is_some() {
+            return Err(ValidationError::invalid_machine(
+                machine_id,
+                format!(
+                    "benign state `{state_id}` must not declare attack_label; attack metadata belongs only on attack states"
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_state_emits(machine_id: &str, machine: &Machine) -> Result<(), ValidationError> {
+    for (state_id, state) in &machine.states {
+        for (emit_index, emit) in state.emit.iter().enumerate() {
+            if let EmitCount::Range(range) = &emit.count {
+                if range.min > range.max {
+                    return Err(ValidationError::invalid_machine(
+                        machine_id,
+                        format!(
+                            "state `{state_id}` emit[{emit_index}].count range min must be <= max, got min={} and max={}",
+                            range.min, range.max
+                        ),
+                    ));
+                }
+            }
+        }
     }
 
     Ok(())
@@ -211,6 +257,51 @@ mod tests {
 
         assert!(matches!(err, ValidationError::InvalidMachine { .. }));
         assert!(err.to_string().contains("start state `missing`"));
+    }
+
+    #[test]
+    fn rejects_attack_state_when_machine_attack_is_disabled() {
+        let mut machine = valid_machine();
+        machine.attack.enabled = false;
+        machine.states.get_mut("start").unwrap().kind = crate::ir::StateKind::Attack;
+
+        let err = validate_machine("login_flow", &machine)
+            .expect_err("disabled attack machine must reject attack states");
+
+        assert!(err.to_string().contains("attack.enabled is false"));
+        assert!(err.to_string().contains("state `start`"));
+    }
+
+    #[test]
+    fn rejects_attack_label_on_benign_state() {
+        let mut machine = valid_machine();
+        machine.states.get_mut("start").unwrap().attack_label = Some(crate::ir::AttackLabel {
+            attack_type: None,
+            technique: Some("T1110".to_owned()),
+            tactic: None,
+            name: None,
+        });
+
+        let err = validate_machine("login_flow", &machine)
+            .expect_err("benign state attack_label must fail");
+
+        assert!(err.to_string().contains("benign state `start`"));
+        assert!(err.to_string().contains("attack_label"));
+    }
+
+    #[test]
+    fn rejects_emit_count_range_with_min_greater_than_max() {
+        let mut machine = valid_machine();
+        machine.states.get_mut("start").unwrap().emit = vec![crate::ir::Emit {
+            template: "login".to_owned(),
+            count: crate::ir::EmitCount::Range(crate::ir::EmitCountRange { min: 9, max: 2 }),
+        }];
+
+        let err = validate_machine("login_flow", &machine)
+            .expect_err("inverted emit count range must fail");
+
+        assert!(err.to_string().contains("emit[0].count"));
+        assert!(err.to_string().contains("min must be <= max"));
     }
 
     #[test]
