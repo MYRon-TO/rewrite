@@ -5,16 +5,17 @@ SHELL := /usr/bin/env bash
 CARGO ?= cargo
 CUE_VALIDATE ?= scripts/validate-cue.sh
 CUE_EXPORT ?= scripts/export-ir.sh
+CUE_INVALID ?= scripts/validate-invalid-cue.sh
 EXAMPLE_IR ?= generated/examples/ssh_bruteforce.json
 RUN_OUT ?= out/events.jsonl
 SEED ?= 42
 
-.PHONY: help check ci rust-check test cue-validate cue-export run-example clean-generated
+.PHONY: help check ci rust-check test cue-validate cue-invalid cue-export run-example clean-generated
 
 help: ## Show available make targets.
 	@awk 'BEGIN {FS = ":.*##"; printf "Available targets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-check: cue-validate cue-export rust-check test ## Run the local quality gate: CUE validation, IR export, cargo check, and tests.
+check: cue-validate cue-invalid cue-export rust-check test ## Run the local quality gate: CUE validation, invalid CUE rejection, IR export, cargo check, and tests.
 
 ci: check ## CI entrypoint; kept as an alias so CI can run one stable command.
 
@@ -26,6 +27,9 @@ test: ## Run Rust tests.
 
 cue-validate: ## Validate CUE examples without involving Rust.
 	$(CUE_VALIDATE)
+
+cue-invalid: ## Assert invalid CUE examples are rejected by schema validation.
+	$(CUE_INVALID)
 
 cue-export: ## Export CUE examples to generated JSON IR without involving Rust.
 	$(CUE_EXPORT)
