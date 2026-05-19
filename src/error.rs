@@ -211,6 +211,9 @@ pub enum RuntimeError {
         field: String,
         message: String,
     },
+
+    #[error("invalid emit count at {location}: {message}")]
+    InvalidEmitCount { location: String, message: String },
 }
 
 impl RuntimeError {
@@ -279,6 +282,13 @@ impl RuntimeError {
         Self::InvalidValueExpression {
             location: location.into(),
             field: field.into(),
+            message: message.into(),
+        }
+    }
+
+    pub fn invalid_emit_count(location: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InvalidEmitCount {
+            location: location.into(),
             message: message.into(),
         }
     }
