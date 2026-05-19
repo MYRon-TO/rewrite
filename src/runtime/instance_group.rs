@@ -218,7 +218,6 @@ mod tests {
                         attack_type: None,
                         technique: None,
                         tactic: None,
-                        name: None,
                         description: None,
                     },
                     states: BTreeMap::new(),

@@ -162,7 +162,6 @@ mod tests {
                 "type": null,
                 "technique": null,
                 "tactic": null,
-                "name": null,
                 "description": null
               },
               "states": {

@@ -185,7 +185,6 @@ mod tests {
             technique: Some("T1110".to_owned()),
             tactic: Some("Credential Access".to_owned()),
             name: Some("Brute Force".to_owned()),
-            description: None,
             attack_state: Some("bruteforce".to_owned()),
             attack_machine: Some("ssh_login_flow".to_owned()),
         }

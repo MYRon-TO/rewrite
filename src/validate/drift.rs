@@ -5,10 +5,11 @@ use crate::error::ValidationError;
 /// Validate that raw IR JSON does not contain fields/objects that are outside the MVP boundary.
 ///
 /// This intentionally works on `serde_json::Value` instead of typed IR structs, but it only scans
-/// structural IR fields. Flexible business-data payloads such as `params`, `template.fields`, and
-/// `const` values are ignored here to avoid rejecting ordinary log field names. Typed
-/// deserialization with `deny_unknown_fields` is still responsible for ordinary schema mismatch;
-/// this module reports explicit MVP-boundary violations with a clearer error category.
+/// structural IR fields. Literal `const` payloads are ignored because they are business data.
+/// `params` and `template.fields` are still scanned: the IR contract explicitly forbids hiding
+/// scripts, hooks, plugins, attack ratios, stages, or dependency fields there. Typed deserialization
+/// with `deny_unknown_fields` is still responsible for ordinary schema mismatch; this module reports
+/// explicit MVP-boundary violations with a clearer error category.
 pub fn validate_drift(raw: &Value) -> Result<(), ValidationError> {
     scan_value(raw, "$", false)
 }
@@ -42,7 +43,7 @@ fn scan_value(value: &Value, location: &str, data_payload: bool) -> Result<(), V
 }
 
 fn is_data_payload_field(field: &str) -> bool {
-    matches!(field, "params" | "fields" | "const")
+    matches!(field, "const")
 }
 
 fn forbidden_field_message(field: &str) -> Option<&'static str> {
@@ -192,14 +193,40 @@ mod tests {
     }
 
     #[test]
-    fn allows_forbidden_words_inside_data_payloads() {
+    fn allows_forbidden_words_inside_const_business_payloads() {
         let mut value = generated_value();
-        value["generators"]["username_pool"]["params"]["script"] = json!("literal string only");
-        value["templates"]["ssh_login_success"]["fields"]["stage"] = json!({"const": "prod"});
         value["templates"]["ssh_login_success"]["fields"]["payload"] =
-            json!({"const": {"external": true}});
+            json!({"const": {"external": true, "script": "literal string only"}});
 
-        validate_drift(&value).expect("drift scan should ignore business data payload keys");
+        validate_drift(&value).expect("drift scan should ignore literal const payload keys");
+    }
+
+    #[test]
+    fn rejects_script_intent_inside_generator_params() {
+        let mut value = generated_value();
+        value["generators"]["username_pool"]["params"]["script"] = json!("do not execute me");
+
+        let err = validate_drift(&value).expect_err("script intent in params is outside MVP");
+
+        assert!(
+            err.to_string()
+                .contains("$.generators.username_pool.params")
+        );
+        assert!(err.to_string().contains("field `script`"));
+    }
+
+    #[test]
+    fn rejects_forbidden_template_field_names() {
+        let mut value = generated_value();
+        value["templates"]["ssh_login_success"]["fields"]["stage"] = json!({"const": "prod"});
+
+        let err = validate_drift(&value).expect_err("stage field is outside MVP");
+
+        assert!(
+            err.to_string()
+                .contains("$.templates.ssh_login_success.fields")
+        );
+        assert!(err.to_string().contains("field `stage`"));
     }
 
     #[test]

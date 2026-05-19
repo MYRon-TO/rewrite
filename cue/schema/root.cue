@@ -15,6 +15,63 @@ package rewrite
 	[string]: #JSON
 }
 
+// JSON-compatible parameter payload that still respects the MVP boundary.
+// Literal template constants use #JSON instead, so business payloads can contain
+// arbitrary log data while params cannot hide execution hooks or future-model fields.
+#MVPJSON: null | bool | number | string | [...#MVPJSON] | #MVPJSONObject
+#MVPJSONObject: {
+	[string]: #MVPJSON
+
+	entity?:                      _|_
+	entities?:                    _|_
+	attack_chain?:                _|_
+	attack_chains?:               _|_
+	attack_ratio?:                _|_
+	attack_quota?:                _|_
+	attack_rate?:                 _|_
+	stage?:                       _|_
+	stages?:                      _|_
+	attack_stage?:                _|_
+	attack_stages?:               _|_
+	dag?:                         _|_
+	event_dag?:                   _|_
+	events_dag?:                  _|_
+	causal_dag?:                  _|_
+	causality?:                   _|_
+	causal_links?:                _|_
+	causal_edges?:                _|_
+	depends_on?:                  _|_
+	dependencies?:                _|_
+	cross_system?:                _|_
+	cross_system_dependency?:     _|_
+	cross_system_dependencies?:   _|_
+	system_dependency?:           _|_
+	system_dependencies?:         _|_
+	depends_on_system?:           _|_
+	target_system?:               _|_
+	source_system?:               _|_
+	cross_instance?:              _|_
+	cross_instance_dependency?:   _|_
+	cross_instance_dependencies?: _|_
+	instance_dependency?:         _|_
+	instance_dependencies?:       _|_
+	depends_on_instance?:         _|_
+	target_instance?:             _|_
+	source_instance?:             _|_
+	script?:                      _|_
+	scripts?:                     _|_
+	eval?:                        _|_
+	exec?:                        _|_
+	shell?:                       _|_
+	hook?:                        _|_
+	hooks?:                       _|_
+	plugin?:                      _|_
+	plugins?:                     _|_
+	external?:                    _|_
+	external_generator?:          _|_
+	external_generators?:         _|_
+}
+
 #ContextRef: =~"^ctx\\.(global|system|instance|event)\\.[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
 
 // Context references use the normalized IR form ctx.<scope>.<name>[.<field>...].
@@ -39,7 +96,7 @@ package rewrite
 
 #GeneratorValueSource: close({
 	generator: #Identifier
-	params:    *{} | #JSONObject
+	params: *{} | #MVPJSONObject
 })
 
 #ContextRefValueSource: close({
@@ -82,15 +139,15 @@ package rewrite
 #InstanceContextValueSource: #ConstValueSource | #GeneratorValueSource | #InstanceContextRefValueSource
 #EventContextValueSource:    #ConstValueSource | #GeneratorValueSource | #EventContextRefValueSource
 
-#TemplateFieldName:   #FieldName & !="shared" & !="share" & !="scope" & !="cache" & !="script" & !="hook" & !="plugin"
+#TemplateFieldName:   #FieldName & !="shared" & !="share" & !="scope" & !="cache" & !="script" & !="scripts" & !="eval" & !="exec" & !="shell" & !="hook" & !="hooks" & !="plugin" & !="plugins" & !="external" & !="external_generator" & !="external_generators" & !="entity" & !="entities" & !="attack_chain" & !="attack_chains" & !="attack_ratio" & !="attack_quota" & !="attack_rate" & !="stage" & !="stages" & !="attack_stage" & !="attack_stages" & !="dag" & !="event_dag" & !="events_dag" & !="causal_dag" & !="causality" & !="causal_links" & !="causal_edges" & !="depends_on" & !="dependencies" & !="cross_system" & !="cross_system_dependency" & !="cross_system_dependencies" & !="system_dependency" & !="system_dependencies" & !="depends_on_system" & !="target_system" & !="source_system" & !="cross_instance" & !="cross_instance_dependency" & !="cross_instance_dependencies" & !="instance_dependency" & !="instance_dependencies" & !="depends_on_instance" & !="target_instance" & !="source_instance"
 #ContextVariableName: #FieldName
 
-#TemplateFields:       [Name=#TemplateFieldName]: #TemplateValueExpr
-#ContextScope:         [Name=#ContextVariableName]: #ContextVariable
-#GlobalContextScope:   [Name=#ContextVariableName]: #GlobalContextVariable
-#SystemContextScope:   [Name=#ContextVariableName]: #SystemContextVariable
+#TemplateFields: [Name=#TemplateFieldName]:         #TemplateValueExpr
+#ContextScope: [Name=#ContextVariableName]:         #ContextVariable
+#GlobalContextScope: [Name=#ContextVariableName]:   #GlobalContextVariable
+#SystemContextScope: [Name=#ContextVariableName]:   #SystemContextVariable
 #InstanceContextScope: [Name=#ContextVariableName]: #InstanceContextVariable
-#EventContextScope:    [Name=#ContextVariableName]: #EventContextVariable
+#EventContextScope: [Name=#ContextVariableName]:    #EventContextVariable
 
 #ContextVariable: close({
 	source:       #ContextValueSource

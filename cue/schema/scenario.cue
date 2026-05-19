@@ -22,6 +22,6 @@ package rewrite
 
 	// Optional declarative parameters for this group. They are plain data, not
 	// scripts and not a second attack-ratio control plane.
-	params?:      #JSONObject
+	params?:      #MVPJSONObject
 	description?: string
 })

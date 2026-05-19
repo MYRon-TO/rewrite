@@ -27,9 +27,6 @@ pub struct ResolvedAttackLabel {
     pub name: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub attack_state: Option<Id>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -61,7 +58,6 @@ pub fn resolve_attack_label(
         technique: source.technique(),
         tactic: source.tactic(),
         name: source.name(),
-        description: source.description(),
         attack_state: Some(state_id.to_owned()),
         attack_machine: Some(machine.id.clone()),
     }
@@ -87,7 +83,6 @@ impl ResolvedAttackLabel {
             technique: None,
             tactic: None,
             name: None,
-            description: None,
             attack_state: None,
             attack_machine: None,
         }
@@ -150,15 +145,7 @@ impl<'a> LabelSource<'a> {
     }
 
     fn name(&self) -> Option<String> {
-        self.state
-            .and_then(|label| label.name.clone())
-            .or_else(|| self.machine.name.clone())
-    }
-
-    fn description(&self) -> Option<String> {
-        self.state
-            .and_then(|label| label.description.clone())
-            .or_else(|| self.machine.description.clone())
+        self.state.and_then(|label| label.name.clone())
     }
 }
 
@@ -196,7 +183,6 @@ mod tests {
             attack_type: Some("credential_access".to_owned()),
             technique: Some("T1110".to_owned()),
             tactic: Some("Credential Access".to_owned()),
-            name: Some("Brute Force".to_owned()),
             description: Some("many failed logins".to_owned()),
         }
     }
@@ -253,7 +239,6 @@ mod tests {
                             technique: Some("T1078".to_owned()),
                             tactic: Some("Defense Evasion".to_owned()),
                             name: Some("Valid Accounts".to_owned()),
-                            description: None,
                         }),
                     ),
                 ),
@@ -318,7 +303,6 @@ mod tests {
         assert_eq!(label.technique.as_deref(), Some("T1078"));
         assert_eq!(label.tactic.as_deref(), Some("Defense Evasion"));
         assert_eq!(label.name.as_deref(), Some("Valid Accounts"));
-        assert_eq!(label.description.as_deref(), Some("many failed logins"));
     }
 
     #[test]

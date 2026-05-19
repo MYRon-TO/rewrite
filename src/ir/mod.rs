@@ -184,7 +184,6 @@ pub struct AttackMetadata {
     pub attack_type: Option<String>,
     pub technique: Option<String>,
     pub tactic: Option<String>,
-    pub name: Option<String>,
     pub description: Option<String>,
 }
 
@@ -214,7 +213,6 @@ pub struct AttackLabel {
     pub technique: Option<String>,
     pub tactic: Option<String>,
     pub name: Option<String>,
-    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

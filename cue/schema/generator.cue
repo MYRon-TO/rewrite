@@ -10,7 +10,7 @@ package rewrite
 	// Built-in generator type name. Phase 3 freezes the MVP built-in set.
 	type: #BuiltinGeneratorType
 
-	params: *{} | #JSONObject
+	params: *{} | #MVPJSONObject
 	description?: string
 })
 
