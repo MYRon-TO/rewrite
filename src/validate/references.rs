@@ -287,6 +287,15 @@ fn validate_instance_group_references(ir: &Ir, index: &ReferenceIndex<'_>) -> Re
             "machine",
             &group.machine,
         )?;
+
+        if group.count == 0 {
+            return Err(ValidationError::invalid_value(
+                &owner,
+                "count",
+                "must be >= 1; zero-count groups should be disabled instead",
+            )
+            .into());
+        }
     }
 
     Ok(())
@@ -766,6 +775,23 @@ mod tests {
                 .contains("scenario.systems does not include")
         );
         assert!(err.to_string().contains("other_system"));
+    }
+
+    #[test]
+    fn instance_group_count_must_be_positive() {
+        let mut ir = generated_ir();
+        ir.instance_groups
+            .get_mut("ssh_login_sessions")
+            .unwrap()
+            .count = 0;
+
+        let err = validate_references(&ir).expect_err("zero-count group must fail");
+
+        assert!(
+            err.to_string()
+                .contains("instance_group.ssh_login_sessions.count")
+        );
+        assert!(err.to_string().contains("must be >= 1"));
     }
 
     #[test]
