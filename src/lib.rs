@@ -5,6 +5,7 @@ pub mod generator;
 pub mod ir;
 pub mod label;
 pub mod machine;
+pub mod output;
 pub mod runtime;
 pub mod template;
 pub mod validate;
