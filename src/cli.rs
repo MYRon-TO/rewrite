@@ -9,7 +9,7 @@ use clap::{Arg, ArgAction, Command, value_parser};
 use crate::{
     error::{IrParseError, Result},
     ir::Ir,
-    output::jsonl::write_events_jsonl,
+    output::{csv::write_events_csv, jsonl::write_events_jsonl},
     runtime::{
         rng::{DEFAULT_SEED, RngManager},
         scenario::{ScenarioRunnerConfig, generate_scenario},
@@ -48,8 +48,13 @@ where
                 .get_one::<PathBuf>("out")
                 .expect("clap requires --out")
                 .clone();
+            let format = subcommand
+                .get_one::<String>("format")
+                .map(|value| OutputFormat::parse(value))
+                .transpose()?
+                .unwrap_or(OutputFormat::Jsonl);
             let seed = subcommand.get_one::<u64>("seed").copied();
-            generate_command(ir_path, out_path, seed)
+            generate_command(ir_path, out_path, format, seed)
         }
         _ => unreachable!("clap requires a known subcommand"),
     }
@@ -82,6 +87,16 @@ fn command() -> Command {
                         .value_parser(value_parser!(PathBuf)),
                 )
                 .arg(
+                    Arg::new("format")
+                        .long("format")
+                        .value_name("FORMAT")
+                        .help("Output format: jsonl writes full event records; csv writes only logs and attack labels.")
+                        .required(false)
+                        .default_value("jsonl")
+                        .action(ArgAction::Set)
+                        .value_parser(["jsonl", "csv"]),
+                )
+                .arg(
                     Arg::new("seed")
                         .long("seed")
                         .value_name("U64")
@@ -111,18 +126,46 @@ fn validate_command(ir_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn generate_command(ir_path: PathBuf, out_path: PathBuf, seed: Option<u64>) -> Result<()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputFormat {
+    Jsonl,
+    Csv,
+}
+
+impl OutputFormat {
+    fn parse(value: &str) -> std::result::Result<Self, IrParseError> {
+        match value {
+            "jsonl" => Ok(Self::Jsonl),
+            "csv" => Ok(Self::Csv),
+            other => Err(IrParseError::invalid(
+                "generate.--format",
+                format!("unsupported output format `{other}`; expected `jsonl` or `csv`"),
+            )),
+        }
+    }
+}
+
+fn generate_command(
+    ir_path: PathBuf,
+    out_path: PathBuf,
+    format: OutputFormat,
+    seed: Option<u64>,
+) -> Result<()> {
     let ir = load_and_validate_ir(&ir_path)?;
     let rng_manager = RngManager::from_cli_seed(seed);
     let generated = generate_scenario(&ir, &rng_manager, ScenarioRunnerConfig::default())?;
 
-    write_events_jsonl(&out_path, generated.events.iter())?;
+    match format {
+        OutputFormat::Jsonl => write_events_jsonl(&out_path, generated.events.iter())?,
+        OutputFormat::Csv => write_events_csv(&out_path, generated.events.iter())?,
+    }
 
     println!(
-        "Generated {} events from {} to {} with seed {}",
+        "Generated {} events from {} to {} as {:?} with seed {}",
         generated.events.len(),
         ir_path.display(),
         out_path.display(),
+        format,
         seed.unwrap_or(DEFAULT_SEED)
     );
 
@@ -224,6 +267,43 @@ mod tests {
         let first: serde_json::Value = serde_json::from_str(lines[0]).expect("line is JSON");
         assert_eq!(first["scenario"], serde_json::json!("ssh_bruteforce_demo"));
         assert!(first["label"].get("is_attack").is_some());
+    }
+
+    #[test]
+    fn generate_command_writes_csv_output() {
+        let ir_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/generated/examples/ssh_bruteforce.json"
+        );
+        let out_path = std::env::temp_dir().join(format!(
+            "rewrite-cli-generate-{}-{}.csv",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+
+        run_with_args([
+            OsString::from("rewrite"),
+            OsString::from("generate"),
+            OsString::from("--ir"),
+            OsString::from(ir_path),
+            OsString::from("--out"),
+            out_path.clone().into_os_string(),
+            OsString::from("--format"),
+            OsString::from("csv"),
+            OsString::from("--seed"),
+            OsString::from("42"),
+        ])
+        .expect("generate command should write CSV");
+
+        let content = std::fs::read_to_string(&out_path).expect("output should be readable");
+        let _ = std::fs::remove_file(out_path);
+
+        let mut reader = csv::Reader::from_reader(content.as_bytes());
+        let headers = reader.headers().unwrap().clone();
+        assert!(headers.iter().any(|header| header == "log"));
+        assert!(headers.iter().any(|header| header == "is_attack"));
+        assert!(!headers.iter().any(|header| header == "scenario"));
+        assert!(reader.records().next().is_some());
     }
 
     #[test]

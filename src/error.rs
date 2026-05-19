@@ -326,6 +326,13 @@ pub enum OutputError {
         #[source]
         source: serde_json::Error,
     },
+
+    #[error("failed to write CSV output record at {location}: {source}")]
+    Csv {
+        location: String,
+        #[source]
+        source: csv::Error,
+    },
 }
 
 impl OutputError {
@@ -345,6 +352,13 @@ impl OutputError {
 
     pub fn serialize(location: impl Into<String>, source: serde_json::Error) -> Self {
         Self::Serialize {
+            location: location.into(),
+            source,
+        }
+    }
+
+    pub fn csv(location: impl Into<String>, source: csv::Error) -> Self {
+        Self::Csv {
             location: location.into(),
             source,
         }

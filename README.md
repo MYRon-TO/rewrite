@@ -54,12 +54,24 @@ cargo run -- validate --ir generated/examples/ssh_bruteforce.json
 IR validation passed: generated/examples/ssh_bruteforce.json
 ```
 
-### 4. 生成 JSONL 日志
+### 4. 生成日志
+
+默认生成完整 JSONL 事件：
 
 ```bash
 cargo run -- generate \
   --ir generated/examples/ssh_bruteforce.json \
   --out out/events.jsonl \
+  --seed 42
+```
+
+也可以生成精简 CSV，只包含输出日志字段和攻击标记：
+
+```bash
+cargo run -- generate \
+  --ir generated/examples/ssh_bruteforce.json \
+  --out out/events.csv \
+  --format csv \
   --seed 42
 ```
 
