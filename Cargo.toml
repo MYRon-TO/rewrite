@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.102"
-chrono = "0.4.44"
+chrono = { version = "0.4.44", features = ["serde"] }
 clap = "4.6.1"
 indexmap = "2.14.0"
 rand = "0.10.1"
