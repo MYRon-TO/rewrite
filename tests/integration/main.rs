@@ -1,6 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use rewrite::{
+    error::RewriteError,
     ir::Ir,
     output::jsonl::write_events_jsonl,
     runtime::{
@@ -13,6 +14,79 @@ use serde_json::Value;
 
 const SSH_IR: &str = "generated/examples/ssh_bruteforce.json";
 const SSH_GOLDEN_SEED_42: &str = "tests/fixtures/golden/ssh_bruteforce_seed_42.jsonl";
+
+#[test]
+fn invalid_fixtures_fail_with_locatable_errors() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let cases: &[(&str, &[&str])] = &[
+        (
+            "tests/fixtures/invalid/missing_template.json",
+            &[
+                "missing template reference `missing_template`",
+                "machine.m.states.a.emit[0].template",
+            ],
+        ),
+        (
+            "tests/fixtures/invalid/missing_state.json",
+            &[
+                "invalid machine `m`",
+                "state `a` transition[0].to references missing state `missing_state`",
+            ],
+        ),
+        (
+            "tests/fixtures/invalid/attack_disabled_has_attack_state.json",
+            &[
+                "invalid machine `m`",
+                "attack.enabled is false",
+                "state `a`",
+            ],
+        ),
+        (
+            "tests/fixtures/invalid/benign_state_attack_label.json",
+            &["invalid machine `m`", "benign state `a`", "attack_label"],
+        ),
+        (
+            "tests/fixtures/invalid/transition_weight_zero.json",
+            &[
+                "invalid machine `m`",
+                "state `a` transition[0].weight",
+                "greater than 0",
+            ],
+        ),
+        (
+            "tests/fixtures/invalid/emit_count_range_reversed.json",
+            &[
+                "invalid machine `m`",
+                "state `a` emit[0].count",
+                "min must be <= max",
+            ],
+        ),
+        (
+            "tests/fixtures/invalid/top_level_attack_chain.json",
+            &[
+                "definition boundary drift",
+                "field `attack_chain`",
+                "cross-machine attack chains",
+            ],
+        ),
+    ];
+
+    for (relative_path, expected_substrings) in cases {
+        let path = manifest_dir.join(relative_path);
+        let err = match validate_ir_file(&path) {
+            Ok(_) => panic!("invalid fixture `{relative_path}` unexpectedly passed validation"),
+            Err(err) => err,
+        };
+        let message = err.to_string();
+
+        for expected in *expected_substrings {
+            assert!(
+                message.contains(expected),
+                "fixture `{relative_path}` error did not contain `{expected}`; actual: {message}"
+            );
+        }
+    }
+}
 
 #[test]
 fn ssh_bruteforce_seed_42_matches_golden_jsonl() {
@@ -40,15 +114,21 @@ fn ssh_bruteforce_seed_42_matches_golden_jsonl() {
 }
 
 fn load_validated_ir(path: &std::path::Path) -> Ir {
-    let content = fs::read_to_string(path).expect("IR fixture should be readable");
-    let raw: Value = serde_json::from_str(&content).expect("IR fixture should be JSON");
-    validate_drift(&raw).expect("IR fixture should pass drift validation");
+    validate_ir_file(path).expect("IR fixture should be valid")
+}
 
-    let ir = Ir::from_json_str(&content, path.display().to_string()).expect("IR fixture parses");
-    validate_identity(&ir).expect("IR fixture identity is valid");
-    validate_references(&ir).expect("IR fixture references are valid");
-    validate_machines(&ir).expect("IR fixture machines are valid");
-    ir
+fn validate_ir_file(path: &std::path::Path) -> Result<Ir, RewriteError> {
+    let content = fs::read_to_string(path)
+        .map_err(|source| rewrite::error::IrParseError::read(path.display().to_string(), source))?;
+    let raw: Value = serde_json::from_str(&content)
+        .map_err(|source| rewrite::error::IrParseError::json(path.display().to_string(), source))?;
+    validate_drift(&raw)?;
+
+    let ir = Ir::from_json_str(&content, path.display().to_string())?;
+    validate_identity(&ir)?;
+    validate_references(&ir)?;
+    validate_machines(&ir)?;
+    Ok(ir)
 }
 
 fn assert_jsonl_contract(content: &str) {

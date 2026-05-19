@@ -1,0 +1,104 @@
+{
+  "attack_chain": {
+    "id": "chain_1"
+  },
+  "context": {
+    "event": {},
+    "global": {},
+    "instance": {},
+    "system": {}
+  },
+  "generators": {},
+  "instance_groups": {
+    "g": {
+      "count": 1,
+      "description": null,
+      "enabled": true,
+      "id": "g",
+      "machine": "m",
+      "params": null
+    }
+  },
+  "ir_version": "0.1",
+  "machines": {
+    "m": {
+      "attack": {
+        "description": null,
+        "enabled": true,
+        "tactic": "Credential Access",
+        "technique": "T1110",
+        "type": "credential_access"
+      },
+      "description": null,
+      "id": "m",
+      "start": "a",
+      "states": {
+        "a": {
+          "attack_label": null,
+          "description": null,
+          "emit": [
+            {
+              "count": 1,
+              "template": "t"
+            }
+          ],
+          "kind": "benign",
+          "terminal": false,
+          "transitions": [
+            {
+              "to": "b",
+              "weight": 1.0
+            }
+          ]
+        },
+        "b": {
+          "attack_label": null,
+          "description": null,
+          "emit": [],
+          "kind": "benign",
+          "terminal": true,
+          "transitions": []
+        }
+      },
+      "system": "s"
+    }
+  },
+  "scenario": {
+    "description": null,
+    "id": "top_level_attack_chain",
+    "instance_groups": [
+      "g"
+    ],
+    "systems": [
+      "s"
+    ],
+    "time_profile": "tp"
+  },
+  "systems": {
+    "s": {
+      "description": null,
+      "id": "s",
+      "kind": null
+    }
+  },
+  "templates": {
+    "t": {
+      "description": null,
+      "event_type": null,
+      "fields": {},
+      "id": "t",
+      "system": "s"
+    }
+  },
+  "time_profiles": {
+    "tp": {
+      "description": null,
+      "granularity": "millisecond",
+      "id": "tp",
+      "monotonic_per_instance": true,
+      "start": "2026-01-01T00:00:00Z",
+      "system_clock_skew": {},
+      "timezone": "UTC"
+    }
+  }
+}
