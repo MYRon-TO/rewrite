@@ -1,8 +1,4 @@
-use crate::{
-    error::RuntimeError,
-    ir::{EmitCount, EmitCountRange},
-    runtime::rng::RuntimeRng,
-};
+use crate::{error::RuntimeError, ir::EmitCount, runtime::rng::RuntimeRng};
 
 /// Samples how many events a state emit declaration should produce.
 ///
@@ -57,29 +53,6 @@ pub fn validate_emit_count_at(
     }
 }
 
-/// Sample how many events one `emit` declaration produces in the current state.
-pub fn sample_emit_count(
-    machine_id: &str,
-    state_id: &str,
-    emit_index: usize,
-    count: &EmitCount,
-    rng: &mut RuntimeRng,
-) -> Result<usize, RuntimeError> {
-    match count {
-        EmitCount::Fixed(value) => Ok(*value),
-        EmitCount::Range(EmitCountRange { min, max }) => {
-            if min > max {
-                return Err(RuntimeError::machine_stuck(
-                    machine_id,
-                    state_id,
-                    format!("emit[{emit_index}].count range has min > max"),
-                ));
-            }
-            Ok(rng.range_usize(*min, *max))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,15 +75,6 @@ mod tests {
             7
         );
     }
-    #[test]
-    fn returns_fixed_count() {
-        let mut rng = RuntimeRng::new(1);
-        assert_eq!(
-            sample_emit_count("m", "s", 0, &EmitCount::Fixed(3), &mut rng).unwrap(),
-            3
-        );
-    }
-
     #[test]
     fn samples_inclusive_range() {
         let mut rng = RuntimeRng::new(7);
@@ -167,31 +131,15 @@ mod tests {
 
         assert!(samples.contains(&0), "lower boundary should be reachable");
         assert!(samples.contains(&1), "upper boundary should be reachable");
-        let mut rng = RuntimeRng::new(1);
-        let count = sample_emit_count(
-            "m",
-            "s",
-            0,
-            &EmitCount::Range(EmitCountRange { min: 2, max: 2 }),
-            &mut rng,
-        )
-        .unwrap();
-
-        assert_eq!(count, 2);
     }
 
     #[test]
-    fn rejects_invalid_range() {
+    fn sample_with_location_reports_invalid_range() {
         let mut rng = RuntimeRng::new(1);
-        let err = sample_emit_count(
-            "m",
-            "s",
-            0,
-            &EmitCount::Range(EmitCountRange { min: 3, max: 2 }),
-            &mut rng,
-        )
-        .unwrap_err();
+        let err = sample_emit_count_at(&range(3, 2), &mut rng, "machine.m.states.s.emit[0].count")
+            .unwrap_err();
 
-        assert!(matches!(err, RuntimeError::MachineStuck { .. }));
+        assert!(matches!(err, RuntimeError::InvalidEmitCount { .. }));
+        assert!(err.to_string().contains("machine.m.states.s.emit[0].count"));
     }
 }

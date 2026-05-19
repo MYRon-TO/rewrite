@@ -4,7 +4,7 @@ use crate::{
     context::{ContextStore, ContextValueGenerator, EventContext},
     error::RuntimeError,
     ir::{Id, Machine, StateKind},
-    machine::{emit::sample_emit_count, sampler::sample_transition},
+    machine::{emit::sample_emit_count_at, sampler::sample_transition},
     runtime::{instance_group::InstancePlan, rng::RuntimeRng, time::InstanceClock},
 };
 
@@ -72,8 +72,14 @@ where
         })?;
 
         for (emit_index, emit) in state.emit.iter().enumerate() {
-            let count =
-                sample_emit_count(&machine.id, &current_state_id, emit_index, &emit.count, rng)?;
+            let count = sample_emit_count_at(
+                &emit.count,
+                rng,
+                format!(
+                    "machine.{}.states.{}.emit[{emit_index}].count",
+                    machine.id, current_state_id
+                ),
+            )?;
 
             for _ in 0..count {
                 let event_context = store.event_context(
