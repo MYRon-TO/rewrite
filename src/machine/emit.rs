@@ -1,4 +1,8 @@
-use crate::{error::RuntimeError, ir::EmitCount, runtime::rng::RuntimeRng};
+use crate::{
+    error::RuntimeError,
+    ir::{EmitCount, EmitCountRange},
+    runtime::rng::RuntimeRng,
+};
 
 /// Samples how many events a state emit declaration should produce.
 ///
@@ -6,10 +10,7 @@ use crate::{error::RuntimeError, ir::EmitCount, runtime::rng::RuntimeRng};
 /// samples from the inclusive range `[min, max]`. The sampler owns only count
 /// semantics; it does not know templates, states, or labels, because stuffing
 /// all that in here would turn a dice roll into a tiny DMV queue.
-pub fn sample_emit_count(
-    count: &EmitCount,
-    rng: &mut RuntimeRng,
-) -> Result<usize, RuntimeError> {
+pub fn sample_emit_count(count: &EmitCount, rng: &mut RuntimeRng) -> Result<usize, RuntimeError> {
     sample_emit_count_at(count, rng, "<unknown>")
 }
 
@@ -56,6 +57,29 @@ pub fn validate_emit_count_at(
     }
 }
 
+/// Sample how many events one `emit` declaration produces in the current state.
+pub fn sample_emit_count(
+    machine_id: &str,
+    state_id: &str,
+    emit_index: usize,
+    count: &EmitCount,
+    rng: &mut RuntimeRng,
+) -> Result<usize, RuntimeError> {
+    match count {
+        EmitCount::Fixed(value) => Ok(*value),
+        EmitCount::Range(EmitCountRange { min, max }) => {
+            if min > max {
+                return Err(RuntimeError::machine_stuck(
+                    machine_id,
+                    state_id,
+                    format!("emit[{emit_index}].count range has min > max"),
+                ));
+            }
+            Ok(rng.range_usize(*min, *max))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,8 +93,22 @@ mod tests {
     fn returns_fixed_count_without_randomizing() {
         let mut rng = RuntimeRng::new(42);
 
-        assert_eq!(sample_emit_count(&EmitCount::Fixed(0), &mut rng).unwrap(), 0);
-        assert_eq!(sample_emit_count(&EmitCount::Fixed(7), &mut rng).unwrap(), 7);
+        assert_eq!(
+            sample_emit_count(&EmitCount::Fixed(0), &mut rng).unwrap(),
+            0
+        );
+        assert_eq!(
+            sample_emit_count(&EmitCount::Fixed(7), &mut rng).unwrap(),
+            7
+        );
+    }
+    #[test]
+    fn returns_fixed_count() {
+        let mut rng = RuntimeRng::new(1);
+        assert_eq!(
+            sample_emit_count("m", "s", 0, &EmitCount::Fixed(3), &mut rng).unwrap(),
+            3
+        );
     }
 
     #[test]
@@ -79,7 +117,10 @@ mod tests {
 
         for _ in 0..256 {
             let count = sample_emit_count(&range(2, 5), &mut rng).unwrap();
-            assert!((2..=5).contains(&count), "sampled count {count} must be in range");
+            assert!(
+                (2..=5).contains(&count),
+                "sampled count {count} must be in range"
+            );
         }
     }
 
@@ -126,5 +167,31 @@ mod tests {
 
         assert!(samples.contains(&0), "lower boundary should be reachable");
         assert!(samples.contains(&1), "upper boundary should be reachable");
+        let mut rng = RuntimeRng::new(1);
+        let count = sample_emit_count(
+            "m",
+            "s",
+            0,
+            &EmitCount::Range(EmitCountRange { min: 2, max: 2 }),
+            &mut rng,
+        )
+        .unwrap();
+
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn rejects_invalid_range() {
+        let mut rng = RuntimeRng::new(1);
+        let err = sample_emit_count(
+            "m",
+            "s",
+            0,
+            &EmitCount::Range(EmitCountRange { min: 3, max: 2 }),
+            &mut rng,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, RuntimeError::MachineStuck { .. }));
     }
 }

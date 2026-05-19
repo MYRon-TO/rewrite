@@ -205,6 +205,9 @@ pub enum RuntimeError {
         message: String,
     },
 
+    #[error("invalid runtime plan at {location}: {message}")]
+    InvalidRuntimePlan { location: String, message: String },
+
     #[error("invalid value expression at {location}.{field}: {message}")]
     InvalidValueExpression {
         location: String,
@@ -270,6 +273,13 @@ impl RuntimeError {
         Self::InvalidTimeProfile {
             profile_id: profile_id.into(),
             field: field.into(),
+            message: message.into(),
+        }
+    }
+
+    pub fn invalid_runtime_plan(location: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InvalidRuntimePlan {
+            location: location.into(),
             message: message.into(),
         }
     }
