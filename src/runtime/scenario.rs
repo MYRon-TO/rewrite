@@ -3,12 +3,15 @@ use crate::{
     error::RuntimeError,
     generator::BuiltinGenerator,
     ir::Ir,
+    label::attack::resolve_attack_label_for_draft,
     machine::runner::{EventDraft, MachineRunnerConfig, run_machine},
     runtime::{
+        event::{EventRecord, assemble_event_from_draft},
         instance_group::{InstancePlan, expand_instance_groups, initialize_plan_contexts},
         rng::RngManager,
         time::TimeModel,
     },
+    template::renderer::render_template,
 };
 
 /// Scenario-level execution settings for phase-4 event draft generation.
@@ -22,6 +25,13 @@ pub struct ScenarioRunnerConfig {
 pub struct ScenarioRun {
     pub plans: Vec<InstancePlan>,
     pub events: Vec<EventDraft>,
+}
+
+/// Result of a full phase-5 scenario generation pass.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeneratedScenario {
+    pub plans: Vec<InstancePlan>,
+    pub events: Vec<EventRecord>,
 }
 
 /// Execute the scenario with the built-in generator implementation.
@@ -55,10 +65,149 @@ pub fn run_scenario_with_generator<G>(
 where
     G: ContextValueGenerator,
 {
-    let plans = expand_instance_groups(ir)?;
-    let mut store = ContextStore::new(ir);
-    initialize_plan_contexts(ir, &plans, &mut store, generator)?;
+    let mut execution = ScenarioExecution::new(ir, rng_manager, generator)?;
+    let events = execution.run_drafts(config)?;
 
+    Ok(ScenarioRun {
+        plans: execution.plans,
+        events,
+    })
+}
+
+/// Generate fully rendered and labelled events with the built-in generator.
+pub fn generate_scenario(
+    ir: &Ir,
+    rng_manager: &RngManager,
+    config: ScenarioRunnerConfig,
+) -> Result<GeneratedScenario, RuntimeError> {
+    let generator_seed = rng_manager.stream("context-generator").seed();
+    let mut generator = BuiltinGenerator::with_seed(generator_seed);
+    generate_scenario_with_generator(ir, rng_manager, &mut generator, config)
+}
+
+/// Execute machines, render templates, resolve labels, and assemble final events.
+///
+/// Rendering happens in the same context store used for machine execution. If we
+/// rebuilt the store here, generator-backed instance variables could drift from
+/// the event contexts already captured by drafts. That kind of split-brain log
+/// is a bug wearing a fake moustache.
+pub fn generate_scenario_with_generator<G>(
+    ir: &Ir,
+    rng_manager: &RngManager,
+    generator: &mut G,
+    config: ScenarioRunnerConfig,
+) -> Result<GeneratedScenario, RuntimeError>
+where
+    G: ContextValueGenerator,
+{
+    let mut execution = ScenarioExecution::new(ir, rng_manager, generator)?;
+    let mut events = Vec::new();
+
+    for (plan_index, plan) in execution.plans.iter().enumerate() {
+        let machine = checked_machine(ir, plan)?;
+        let mut clock = execution.time_model.instance_clock(&plan.system_id);
+        let mut machine_rng = rng_manager.indexed_stream("machine-runner", plan_index as u64);
+        let drafts = run_machine(
+            machine,
+            plan,
+            &mut execution.store,
+            execution.generator,
+            &mut clock,
+            &mut machine_rng,
+            config.machine,
+        )?;
+
+        for draft in drafts {
+            let template = ir.templates.get(&draft.template_id).ok_or_else(|| {
+                RuntimeError::invalid_runtime_plan(
+                    format!(
+                        "event.{}.machine.{}.state.{}.template",
+                        draft.instance_id, draft.machine_id, draft.state_id
+                    ),
+                    format!("template `{}` does not exist", draft.template_id),
+                )
+            })?;
+            let fields =
+                render_template(template, &mut execution.store, execution.generator, &draft)?;
+            let label = resolve_attack_label_for_draft(machine, &draft).map_err(|err| {
+                RuntimeError::invalid_runtime_plan(
+                    format!("machine.{}.states.{}", err.machine_id, err.state_id),
+                    err.to_string(),
+                )
+            })?;
+            events.push(assemble_event_from_draft(&draft, fields, label));
+        }
+    }
+
+    Ok(GeneratedScenario {
+        plans: execution.plans,
+        events,
+    })
+}
+
+struct ScenarioExecution<'a, 'ir, G>
+where
+    G: ContextValueGenerator,
+{
+    ir: &'ir Ir,
+    rng_manager: &'a RngManager,
+    plans: Vec<InstancePlan>,
+    store: ContextStore<'ir>,
+    generator: &'a mut G,
+    time_model: TimeModel,
+}
+
+impl<'a, 'ir, G> ScenarioExecution<'a, 'ir, G>
+where
+    G: ContextValueGenerator,
+{
+    fn new(
+        ir: &'ir Ir,
+        rng_manager: &'a RngManager,
+        generator: &'a mut G,
+    ) -> Result<Self, RuntimeError> {
+        let plans = expand_instance_groups(ir)?;
+        let mut store = ContextStore::new(ir);
+        initialize_plan_contexts(ir, &plans, &mut store, generator)?;
+        let time_model = scenario_time_model(ir, rng_manager)?;
+
+        Ok(Self {
+            ir,
+            rng_manager,
+            plans,
+            store,
+            generator,
+            time_model,
+        })
+    }
+
+    fn run_drafts(
+        &mut self,
+        config: ScenarioRunnerConfig,
+    ) -> Result<Vec<EventDraft>, RuntimeError> {
+        let mut events = Vec::new();
+        for (plan_index, plan) in self.plans.iter().enumerate() {
+            let machine = checked_machine(self.ir, plan)?;
+            let mut clock = self.time_model.instance_clock(&plan.system_id);
+            let mut machine_rng = self
+                .rng_manager
+                .indexed_stream("machine-runner", plan_index as u64);
+            let mut instance_events = run_machine(
+                machine,
+                plan,
+                &mut self.store,
+                self.generator,
+                &mut clock,
+                &mut machine_rng,
+                config.machine,
+            )?;
+            events.append(&mut instance_events);
+        }
+        Ok(events)
+    }
+}
+
+fn scenario_time_model(ir: &Ir, rng_manager: &RngManager) -> Result<TimeModel, RuntimeError> {
     let time_profile = ir
         .time_profiles
         .get(&ir.scenario.time_profile)
@@ -69,42 +218,31 @@ where
             )
         })?;
     let mut time_rng = rng_manager.stream("time-profile");
-    let time_model = TimeModel::from_profile(time_profile, &mut time_rng)?;
+    TimeModel::from_profile(time_profile, &mut time_rng)
+}
 
-    let mut events = Vec::new();
-    for (plan_index, plan) in plans.iter().enumerate() {
-        let machine = ir.machines.get(&plan.machine_id).ok_or_else(|| {
-            RuntimeError::invalid_runtime_plan(
-                format!("{}.machine", plan.location()),
-                format!("machine `{}` does not exist", plan.machine_id),
-            )
-        })?;
+fn checked_machine<'ir>(
+    ir: &'ir Ir,
+    plan: &InstancePlan,
+) -> Result<&'ir crate::ir::Machine, RuntimeError> {
+    let machine = ir.machines.get(&plan.machine_id).ok_or_else(|| {
+        RuntimeError::invalid_runtime_plan(
+            format!("{}.machine", plan.location()),
+            format!("machine `{}` does not exist", plan.machine_id),
+        )
+    })?;
 
-        if machine.system != plan.system_id {
-            return Err(RuntimeError::invalid_runtime_plan(
-                format!("{}.system", plan.location()),
-                format!(
-                    "plan system `{}` does not match machine `{}` system `{}`",
-                    plan.system_id, machine.id, machine.system
-                ),
-            ));
-        }
-
-        let mut clock = time_model.instance_clock(&plan.system_id);
-        let mut machine_rng = rng_manager.indexed_stream("machine-runner", plan_index as u64);
-        let mut instance_events = run_machine(
-            machine,
-            plan,
-            &mut store,
-            generator,
-            &mut clock,
-            &mut machine_rng,
-            config.machine,
-        )?;
-        events.append(&mut instance_events);
+    if machine.system != plan.system_id {
+        return Err(RuntimeError::invalid_runtime_plan(
+            format!("{}.system", plan.location()),
+            format!(
+                "plan system `{}` does not match machine `{}` system `{}`",
+                plan.system_id, machine.id, machine.system
+            ),
+        ));
     }
 
-    Ok(ScenarioRun { plans, events })
+    Ok(machine)
 }
 
 #[cfg(test)]
