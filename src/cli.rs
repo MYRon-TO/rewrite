@@ -300,9 +300,20 @@ mod tests {
 
         let mut reader = csv::Reader::from_reader(content.as_bytes());
         let headers = reader.headers().unwrap().clone();
-        assert!(headers.iter().any(|header| header == "log"));
-        assert!(headers.iter().any(|header| header == "is_attack"));
+        assert_eq!(
+            headers.iter().collect::<Vec<_>>(),
+            vec![
+                "host",
+                "content",
+                "is_attack",
+                "attack_type",
+                "technique",
+                "tactic",
+                "attack_name",
+            ]
+        );
         assert!(!headers.iter().any(|header| header == "scenario"));
+        assert!(!headers.iter().any(|header| header == "log"));
         assert!(reader.records().next().is_some());
     }
 

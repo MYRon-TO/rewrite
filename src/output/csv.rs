@@ -8,42 +8,52 @@ use serde::Serialize;
 
 use crate::{error::OutputError, runtime::event::EventRecord};
 
-/// CSV row containing only the emitted log payload and attack label.
+/// CSV row containing only the host, human-readable log content and attack label.
 ///
 /// Runtime routing metadata (`scenario`, `system`, `instance`, `machine`,
-/// `state`, `template`) is intentionally omitted. Cramming every internal
-/// breadcrumb into this format would turn a compact CSV into a spreadsheet
-/// goblin with delusions of being a data warehouse.
+/// `state`, `template`) is intentionally omitted. Do not use a `log_line` field
+/// here: that name belongs to the source CUE model, and reusing it in CSV would
+/// be the kind of naming banana peel that makes future readers slip in silence.
 #[derive(Debug, Serialize)]
 struct CsvEventRow {
-    timestamp: String,
-    log: String,
+    host: String,
+    content: String,
     is_attack: bool,
     attack_type: Option<String>,
     technique: Option<String>,
     tactic: Option<String>,
-    name: Option<String>,
-    attack_state: Option<String>,
-    attack_machine: Option<String>,
+    attack_name: Option<String>,
 }
 
 impl CsvEventRow {
-    fn from_event(event: &EventRecord, location: impl Into<String>) -> Result<Self, OutputError> {
-        let location = location.into();
-        let log = serde_json::to_string(&event.fields)
-            .map_err(|source| OutputError::serialize(location, source))?;
-
-        Ok(Self {
-            timestamp: event.timestamp.to_rfc3339(),
-            log,
+    fn from_event(event: &EventRecord) -> Self {
+        Self {
+            host: field_as_string(event, "host"),
+            content: field_as_string(event, "content"),
             is_attack: event.label.is_attack,
             attack_type: event.label.attack_type.clone(),
             technique: event.label.technique.clone(),
             tactic: event.label.tactic.clone(),
-            name: event.label.name.clone(),
-            attack_state: event.label.attack_state.clone(),
-            attack_machine: event.label.attack_machine.clone(),
-        })
+            attack_name: event.label.name.clone(),
+        }
+    }
+}
+
+fn field_as_string(event: &EventRecord, field: &str) -> String {
+    event
+        .fields
+        .get(field)
+        .map(json_value_as_string)
+        .unwrap_or_default()
+}
+
+fn json_value_as_string(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(value) => value.clone(),
+        serde_json::Value::Bool(value) => value.to_string(),
+        serde_json::Value::Number(value) => value.to_string(),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => value.to_string(),
     }
 }
 
@@ -70,7 +80,7 @@ where
         location: impl Into<String>,
     ) -> Result<(), OutputError> {
         let location = location.into();
-        let row = CsvEventRow::from_event(event, location.clone())?;
+        let row = CsvEventRow::from_event(event);
         self.writer
             .serialize(row)
             .map_err(|source| OutputError::csv(location, source))
@@ -85,8 +95,9 @@ where
 
 /// Write final event records to a compact `.csv` file.
 ///
-/// Columns are: `timestamp`, `log` (rendered fields as JSON text), and attack
-/// label columns. Internal runtime identity fields are not written.
+/// Columns are: `host`, `content` (from the rendered `message` field),
+/// `is_attack`, `attack_type`, `technique`, `tactic`, and `attack_name`.
+/// Internal runtime identity fields are not written.
 pub fn write_events_csv<'a, P, I>(path: P, events: I) -> Result<(), OutputError>
 where
     P: AsRef<Path>,
@@ -146,6 +157,7 @@ mod tests {
     fn event(is_attack: bool) -> EventRecord {
         let timestamp = Utc.with_ymd_and_hms(2026, 5, 17, 0, 0, 0).single().unwrap();
         let fields = JsonObject::from([
+            ("host".to_owned(), json!("auth-01")),
             ("message".to_owned(), json!("login failed")),
             ("user".to_owned(), json!("root")),
         ]);
@@ -175,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn writes_log_and_attack_label_columns_only() {
+    fn writes_host_content_and_attack_label_columns_only() {
         let path = temp_path("events.csv");
         let events = vec![event(false), event(true)];
 
@@ -189,26 +201,25 @@ mod tests {
         assert_eq!(
             headers.iter().collect::<Vec<_>>(),
             vec![
-                "timestamp",
-                "log",
+                "host",
+                "content",
                 "is_attack",
                 "attack_type",
                 "technique",
                 "tactic",
-                "name",
-                "attack_state",
-                "attack_machine",
+                "attack_name",
             ]
         );
         assert!(!headers.iter().any(|header| header == "scenario"));
 
         let rows = reader.records().collect::<Result<Vec<_>, _>>().unwrap();
         assert_eq!(rows.len(), 2);
+        assert_eq!(&rows[0][0], "auth-01");
+        assert_eq!(&rows[0][1], "login failed");
         assert_eq!(&rows[0][2], "false");
         assert_eq!(&rows[1][2], "true");
         assert_eq!(&rows[1][4], "T1110");
-        let log: serde_json::Value = serde_json::from_str(&rows[0][1]).unwrap();
-        assert_eq!(log["message"], json!("login failed"));
+        assert_eq!(&rows[1][6], "Brute Force");
     }
 
     #[test]

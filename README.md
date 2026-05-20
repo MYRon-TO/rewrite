@@ -65,7 +65,7 @@ cargo run -- generate \
   --seed 42
 ```
 
-也可以生成精简 CSV，只包含输出日志字段和攻击标记：
+也可以生成精简 CSV，只包含 `host`、`content` 和攻击标记列：
 
 ```bash
 cargo run -- generate \

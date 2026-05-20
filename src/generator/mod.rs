@@ -1,4 +1,6 @@
-use std::net::Ipv4Addr;
+mod const_str;
+
+use std::{collections::BTreeMap, net::Ipv4Addr};
 
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Number, Value};
@@ -8,6 +10,8 @@ use crate::{
     error::RuntimeError,
     ir::{Generator, JsonObject},
 };
+
+use const_str::*;
 
 pub const BUILTIN_GENERATOR_TYPES: &[&str] = &[
     "fixed",
@@ -20,11 +24,8 @@ pub const BUILTIN_GENERATOR_TYPES: &[&str] = &[
     "simple_username",
     "uuid",
     "session_id",
+    "sequence",
 ];
-
-const DEFAULT_USERNAME_A: [&str; 3] = ["blue", "green", "silver"];
-const DEFAULT_USERNAME_B: [&str; 3] = ["fox", "panda", "otter"];
-const UUID_HEX: &[u8; 16] = b"0123456789abcdef";
 
 pub fn is_builtin_generator_type(generator_type: &str) -> bool {
     BUILTIN_GENERATOR_TYPES.contains(&generator_type)
@@ -33,12 +34,14 @@ pub fn is_builtin_generator_type(generator_type: &str) -> bool {
 #[derive(Debug)]
 pub struct BuiltinGenerator {
     rng: StdRng,
+    sequences: BTreeMap<String, i64>,
 }
 
 impl BuiltinGenerator {
     pub fn with_seed(seed: u64) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed),
+            sequences: BTreeMap::new(),
         }
     }
 
@@ -56,6 +59,7 @@ impl BuiltinGenerator {
             "username" | "simple_username" => self.simple_username(generator, params, location),
             "uuid" => Ok(Value::String(self.uuid_v4())),
             "session_id" => Ok(Value::String(format!("sess-{}", self.hex_bytes(16)))),
+            "sequence" => self.sequence(generator, params, location),
             other => Err(invalid(
                 location,
                 format!(
@@ -186,7 +190,44 @@ impl BuiltinGenerator {
 
         let a = &a_values[self.rng.random_range(0..a_values.len())];
         let b = &b_values[self.rng.random_range(0..b_values.len())];
-        Ok(Value::String(format!("{a}{b}")))
+        let c = self.rng.random_range(0..100).to_string();
+        Ok(Value::String(format!("{a}{b}{c}")))
+    }
+
+    fn sequence(
+        &mut self,
+        generator: &Generator,
+        params: &JsonObject,
+        location: &str,
+    ) -> Result<Value, RuntimeError> {
+        let start = optional_integer_param(generator, params, "start", location)?.unwrap_or(1);
+        let step = optional_integer_param(generator, params, "step", location)?.unwrap_or(1);
+        if step == 0 {
+            return Err(invalid(location, "sequence.step must not be 0"));
+        }
+
+        let key = optional_string_param(generator, params, "key", location)?
+            .unwrap_or(&generator.id)
+            .to_owned();
+        let current = self.sequences.entry(key).or_insert(start);
+        let value = *current;
+        *current = current
+            .checked_add(step)
+            .ok_or_else(|| invalid(location, "sequence value overflow"))?;
+
+        let prefix = optional_string_param(generator, params, "prefix", location)?.unwrap_or("");
+        let suffix = optional_string_param(generator, params, "suffix", location)?.unwrap_or("");
+        let pad = optional_integer_param(generator, params, "pad", location)?.unwrap_or(0);
+        if pad < 0 {
+            return Err(invalid(location, "sequence.pad must be >= 0"));
+        }
+
+        let number = if pad == 0 {
+            value.to_string()
+        } else {
+            format!("{:0width$}", value, width = pad as usize)
+        };
+        Ok(Value::String(format!("{prefix}{number}{suffix}")))
     }
 
     fn uuid_v4(&mut self) -> String {
@@ -267,6 +308,24 @@ fn integer_param(
                 format!("generator param `{name}` must be an integer"),
             )
         })
+}
+
+fn optional_integer_param(
+    generator: &Generator,
+    params: &JsonObject,
+    name: &str,
+    location: &str,
+) -> Result<Option<i64>, RuntimeError> {
+    optional_param(generator, params, name)
+        .map(|value| {
+            value.as_i64().ok_or_else(|| {
+                invalid(
+                    location,
+                    format!("generator param `{name}` must be an integer"),
+                )
+            })
+        })
+        .transpose()
 }
 
 fn optional_string_param<'a>(
@@ -429,5 +488,24 @@ mod tests {
             .unwrap();
 
         assert!(value.as_str().unwrap().starts_with("sess-"));
+    }
+
+    #[test]
+    fn sequence_increments_with_prefix_and_padding() {
+        let generator = make_generator(
+            "sequence",
+            json!({"prefix":"host-","start":1,"step":1,"pad":2}),
+        );
+        let mut builtins = BuiltinGenerator::with_seed(29);
+
+        let first = builtins
+            .generate_value(&generator, &JsonObject::new(), "test")
+            .unwrap();
+        let second = builtins
+            .generate_value(&generator, &JsonObject::new(), "test")
+            .unwrap();
+
+        assert_eq!(first, json!("host-01"));
+        assert_eq!(second, json!("host-02"));
     }
 }
