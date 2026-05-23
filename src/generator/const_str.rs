@@ -1,4 +1,4 @@
-pub const DEFAULT_USERNAME_A: [&str; 30] = [
+pub const DEFAULT_ADJ: [&str; 30] = [
     "blue",
     "silver",
     "red",
@@ -30,7 +30,7 @@ pub const DEFAULT_USERNAME_A: [&str; 30] = [
     "yellow",
     "pink",
 ];
-pub const DEFAULT_USERNAME_B: [&str; 30] = [
+pub const DEFAULT_NAME: [&str; 30] = [
     "cat",
     "dog",
     "lion",
@@ -63,3 +63,7 @@ pub const DEFAULT_USERNAME_B: [&str; 30] = [
     "butterfly",
 ];
 pub const UUID_HEX: &[u8; 16] = b"0123456789abcdef";
+
+pub const DEFAULT_FILE_SUFFIX: [&str; 10] = [
+    "txt", "docx", "pdf", "jpg", "png", "mp4", "mp3", "zip", "exe", "html"
+];

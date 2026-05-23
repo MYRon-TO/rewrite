@@ -22,6 +22,8 @@ pub const BUILTIN_GENERATOR_TYPES: &[&str] = &[
     "ipv4",
     "username",
     "simple_username",
+    "simple_words",
+    "simple_filename",
     "uuid",
     "session_id",
     "sequence",
@@ -56,10 +58,11 @@ impl BuiltinGenerator {
             "choice" => self.choice(generator, params, location),
             "number_range" | "range" => self.number_range(generator, params, location),
             "ipv4" => self.ipv4(generator, params, location),
-            "username" | "simple_username" => self.simple_username(generator, params, location),
+            "username" | "simple_username" | "simple_words" => self.simple_username(generator, params, location),
             "uuid" => Ok(Value::String(self.uuid_v4())),
             "session_id" => Ok(Value::String(format!("sess-{}", self.hex_bytes(16)))),
             "sequence" => self.sequence(generator, params, location),
+            "simple_filename" => self.simple_filename(generator, params, location),
             other => Err(invalid(
                 location,
                 format!(
@@ -162,6 +165,47 @@ impl BuiltinGenerator {
         Ok(Ipv4Addr::from(network | host).to_string())
     }
 
+
+    fn simple_filename(
+        &mut self,
+        generator: &Generator,
+        params: &JsonObject,
+        location: &str,
+    ) -> Result<Value, RuntimeError> {
+        let a_values = string_array_param(generator, params, "a", location)?.unwrap_or_else(|| {
+            DEFAULT_ADJ
+                .iter()
+                .map(|value| value.to_string())
+                .collect()
+        });
+        let b_values = string_array_param(generator, params, "b", location)?.unwrap_or_else(|| {
+            DEFAULT_NAME
+                .iter()
+                .map(|value| value.to_string())
+                .collect()
+        });
+
+        let file_suffix = string_array_param(generator, params, "c", location)?.unwrap_or_else(|| {
+            DEFAULT_FILE_SUFFIX
+                .iter()
+                .map(|value| value.to_string())
+                .collect()
+        });
+
+        if a_values.is_empty() || b_values.is_empty() || file_suffix.is_empty() {
+            return Err(invalid(
+                location,
+                "arrays `a`, `b` and `file_suffix` must not be empty",
+            ));
+        }
+
+        let a = &a_values[self.rng.random_range(0..a_values.len())];
+        let b = &b_values[self.rng.random_range(0..b_values.len())];
+        let c = self.rng.random_range(0..100).to_string();
+        let s = &file_suffix[self.rng.random_range(0..file_suffix.len())];
+        Ok(Value::String(format!("{a}-{b}{c}.{s}")))
+    }
+
     fn simple_username(
         &mut self,
         generator: &Generator,
@@ -169,13 +213,13 @@ impl BuiltinGenerator {
         location: &str,
     ) -> Result<Value, RuntimeError> {
         let a_values = string_array_param(generator, params, "a", location)?.unwrap_or_else(|| {
-            DEFAULT_USERNAME_A
+            DEFAULT_ADJ
                 .iter()
                 .map(|value| value.to_string())
                 .collect()
         });
         let b_values = string_array_param(generator, params, "b", location)?.unwrap_or_else(|| {
-            DEFAULT_USERNAME_B
+            DEFAULT_NAME
                 .iter()
                 .map(|value| value.to_string())
                 .collect()

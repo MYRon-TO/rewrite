@@ -14,4 +14,4 @@ package rewrite
 	description?: string
 })
 
-#BuiltinGeneratorType: "fixed" | "const" | "choice" | "number_range" | "range" | "ipv4" | "username" | "simple_username" | "uuid" | "session_id" | "sequence"
+#BuiltinGeneratorType: "fixed" | "const" | "choice" | "number_range" | "range" | "ipv4" | "username" | "simple_username" | "uuid" | "session_id" | "sequence" | "simple_words" | "simple_filename"
