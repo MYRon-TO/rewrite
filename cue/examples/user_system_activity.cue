@@ -37,15 +37,13 @@ generators: {
 		}
 	}
 	file_pool: {
-		type: "choice"
+		type: "simple_filename"
 		params: {
-			values: ["report.pdf", "invoice.xlsx", "avatar.png", "dataset.csv"]
 		}
 	}
 	table_pool: {
-		type: "choice"
+		type: "simple_words"
 		params: {
-			values: ["users", "orders", "audit_logs", "files"]
 		}
 	}
 	session_id: {
@@ -592,37 +590,6 @@ templates: {
 			result: {const: "failure"}
 		}
 	}
-	bypass_login_operation_request: {
-		system:     "app_platform"
-		event_type: "auth_bypass_operation"
-		fields: {
-			host: {ref: "ctx.instance.host"}
-			content: {interpolate: "未发现登录成功记录，用户 ${ctx.instance.actor} 直接发起敏感操作"}
-			user: {ref: "ctx.instance.actor"}
-			session: {ref: "ctx.instance.session"}
-		}
-	}
-	bypass_login_operation_execute: {
-		system:     "app_platform"
-		event_type: "auth_bypass_operation"
-		fields: {
-			host: {ref: "ctx.instance.host"}
-			content: {interpolate: "绕过登录校验后执行对表 ${ctx.instance.table} 的更新操作"}
-			user: {ref: "ctx.instance.actor"}
-			table: {ref: "ctx.instance.table"}
-			result: {const: "success"}
-		}
-	}
-	repeated_login_attempt: {
-		system:     "app_platform"
-		event_type: "user_login"
-		fields: {
-			host: {ref: "ctx.instance.host"}
-			content: {interpolate: "用户 ${ctx.instance.actor} 发生重复登录尝试"}
-			user: {ref: "ctx.instance.actor"}
-			result: {const: "failure"}
-		}
-	}
 	system_start: {
 		system:     "system_service"
 		event_type: "system_lifecycle"
@@ -728,9 +695,9 @@ machines: {
 			entry_point: {
 				kind: "benign"
 				transitions: [
-					{to: "login_attempt_1_request", weight: 94},
-					{to: "attack_bypass_login_operation", weight: 3},
-					{to: "attack_multiple_login", weight: 3},
+					{to: "login_attempt_1_request", weight: 82},
+					{to: "attack_bypass_login_operation", weight: 5},
+					{to: "attack_multiple_login", weight: 13},
 				]
 			}
 			login_attempt_1_request: {
@@ -809,12 +776,12 @@ machines: {
 				transitions: [
 					{to: "create_user_request", weight: 17},
 					{to: "delete_user", weight: 9},
-					{to: "file_upload_request", weight: 19},
-					{to: "file_download", weight: 11},
-					{to: "db_query_request", weight: 19},
+					{to: "file_upload_request", weight: 18},
+					{to: "file_download", weight: 10},
+					{to: "db_query_request", weight: 18},
 					{to: "db_update", weight: 9},
-					{to: "attack_delete_audit_logs", weight: 6},
-					{to: "user_abort", weight: 10},
+					{to: "attack_delete_audit_logs", weight: 10},
+					{to: "user_abort", weight: 9},
 				]
 			}
 			create_user_request: {
@@ -892,10 +859,10 @@ machines: {
 					type:      "authentication_bypass"
 					technique: "T1550"
 					tactic:    "defense_evasion"
-					name:      "Bypass login before operation"
+					name:      "Deleted normal-looking login evidence before bypassed operation"
 				}
-				emit: [{template: "bypass_login_operation_request"}, {template: "bypass_login_operation_execute"}]
-				transitions: [{to: "user_abort", weight: 1}]
+				emit: [{template: "login_request"}, {template: "login_verify"}, {template: "login_success"}]
+				transitions: [{to: "choose_behavior", weight: 1}]
 			}
 			attack_multiple_login: {
 				kind: "attack"
@@ -903,10 +870,13 @@ machines: {
 					type:      "multiple_login_attempts"
 					technique: "T1110"
 					tactic:    "credential_access"
-					name:      "Multiple repeated login attempts"
+					name:      "Many normal-looking login attempts"
 				}
-				emit: [{template: "repeated_login_attempt", count: {min: 5, max: 20}}]
-				transitions: [{to: "login_attempt_1_request", weight: 1}]
+				emit: [{template: "login_request"}, {template: "login_verify"}, {template: "login_bad_credentials"}, {template: "login_failure_record"}]
+				transitions: [
+					{to: "attack_multiple_login", weight: 90},
+					{to: "login_attempt_1_request", weight: 10},
+				]
 			}
 			attack_delete_audit_logs: {
 				kind: "attack"
