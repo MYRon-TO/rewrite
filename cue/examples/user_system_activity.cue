@@ -23,28 +23,23 @@ systems: {
 generators: {
 	user_pool: {
 		type: "username"
-		params: {
-		}
+		params: {}
 	}
 	new_user_pool: {
 		type: "username"
-		params: {
-		}
+		params: {}
 	}
 	target_user_pool: {
 		type: "username"
-		params: {
-		}
+		params: {}
 	}
 	file_pool: {
 		type: "simple_filename"
-		params: {
-		}
+		params: {}
 	}
 	table_pool: {
 		type: "simple_words"
-		params: {
-		}
+		params: {}
 	}
 	session_id: {
 		type: "uuid"
@@ -780,7 +775,8 @@ machines: {
 					{to: "file_download", weight: 10},
 					{to: "db_query_request", weight: 18},
 					{to: "db_update", weight: 9},
-					{to: "attack_delete_audit_logs", weight: 10},
+					{to: "attack_delete_audit_logs", weight: 3},
+					{to: "attack_partially_delete_audit_logs", weight: 7},
 					{to: "user_abort", weight: 9},
 				]
 			}
@@ -955,6 +951,159 @@ machines: {
 				emit: [{template: "db_update_request"}, {template: "db_begin_transaction"}, {template: "db_execute_update"}, {template: "db_validate_integrity"}, {template: "db_commit"}, {template: "db_update_success"}]
 				transitions: [{to: "post_behavior", weight: 1}]
 			}
+			attack_partially_delete_audit_logs: {
+				kind: "attack"
+				transitions: [
+					{to: "attack_partial_create_user_request", weight: 15},
+					{to: "attack_partial_delete_user_request", weight: 15},
+					{to: "attack_partial_file_upload_request", weight: 20},
+					{to: "attack_partial_file_download_request", weight: 15},
+					{to: "attack_partial_db_query_request", weight: 20},
+					{to: "attack_partial_db_update_request", weight: 15},
+				]
+			}
+			attack_partial_create_user_request: {
+				kind: "benign"
+				emit: [{template: "create_user_request"}]
+				transitions: [{to: "attack_partial_create_user_deleted_check_permission", weight: 1}]
+			}
+			attack_partial_create_user_deleted_check_permission: {
+				kind: "attack"
+				attack_label: {
+					type:      "partial:log_tampering"
+					technique: "T1070"
+					tactic:    "defense_evasion"
+					name:      "Partially removed user creation audit logs"
+				}
+				emit: [{template: "create_user_check_permission"}]
+				transitions: [{to: "attack_partial_create_user_check_exists", weight: 1}]
+			}
+			attack_partial_create_user_check_exists: {
+				kind: "benign"
+				emit: [{template: "create_user_check_exists"}]
+				transitions: [{to: "attack_partial_create_user_deleted_create_account", weight: 1}]
+			}
+			attack_partial_create_user_deleted_create_account: {
+				kind: "attack"
+				attack_label: {
+					type:      "partial:log_tampering"
+					technique: "T1070"
+					tactic:    "defense_evasion"
+					name:      "Partially removed user creation audit logs"
+				}
+				emit: [{template: "create_user_create_account"}]
+				transitions: [{to: "attack_partial_create_user_remaining", weight: 1}]
+			}
+			attack_partial_create_user_remaining: {
+				kind: "benign"
+				emit: [{template: "create_user_set_permission"}, {template: "create_user_success"}]
+				transitions: [{to: "post_behavior", weight: 1}]
+			}
+			attack_partial_delete_user_request: {
+				kind: "benign"
+				emit: [{template: "delete_user_request"}]
+				transitions: [{to: "attack_partial_delete_user_deleted_checks", weight: 1}]
+			}
+			attack_partial_delete_user_deleted_checks: {
+				kind: "attack"
+				attack_label: {
+					type:      "partial:log_tampering"
+					technique: "T1070"
+					tactic:    "defense_evasion"
+					name:      "Partially removed user deletion audit logs"
+				}
+				emit: [{template: "delete_user_check_permission"}, {template: "delete_user_check_exists"}]
+				transitions: [{to: "attack_partial_delete_user_remaining", weight: 1}]
+			}
+			attack_partial_delete_user_remaining: {
+				kind: "benign"
+				emit: [{template: "delete_user_delete_account"}, {template: "delete_user_success"}]
+				transitions: [{to: "post_behavior", weight: 1}]
+			}
+			attack_partial_file_upload_request: {
+				kind: "benign"
+				emit: [{template: "file_upload_request"}]
+				transitions: [{to: "attack_partial_file_upload_deleted_validation", weight: 1}]
+			}
+			attack_partial_file_upload_deleted_validation: {
+				kind: "attack"
+				attack_label: {
+					type:      "partial:log_tampering"
+					technique: "T1070"
+					tactic:    "defense_evasion"
+					name:      "Partially removed file upload audit logs"
+				}
+				emit: [{template: "file_check_format"}, {template: "file_prepare_transfer"}]
+				transitions: [{to: "attack_partial_file_upload_remaining", weight: 1}]
+			}
+			attack_partial_file_upload_remaining: {
+				kind: "benign"
+				emit: [{template: "file_upload_success"}, {template: "file_update_index"}]
+				transitions: [{to: "post_behavior", weight: 1}]
+			}
+			attack_partial_file_download_request: {
+				kind: "benign"
+				emit: [{template: "file_download_request"}]
+				transitions: [{to: "attack_partial_file_download_deleted_access", weight: 1}]
+			}
+			attack_partial_file_download_deleted_access: {
+				kind: "attack"
+				attack_label: {
+					type:      "partial:log_tampering"
+					technique: "T1070"
+					tactic:    "defense_evasion"
+					name:      "Partially removed file download audit logs"
+				}
+				emit: [{template: "file_download_check_permission"}, {template: "file_download_start"}]
+				transitions: [{to: "attack_partial_file_download_success", weight: 1}]
+			}
+			attack_partial_file_download_success: {
+				kind: "benign"
+				emit: [{template: "file_download_success"}]
+				transitions: [{to: "post_behavior", weight: 1}]
+			}
+			attack_partial_db_query_request: {
+				kind: "benign"
+				emit: [{template: "db_query_request"}]
+				transitions: [{to: "attack_partial_db_query_deleted_execution", weight: 1}]
+			}
+			attack_partial_db_query_deleted_execution: {
+				kind: "attack"
+				attack_label: {
+					type:      "partial:log_tampering"
+					technique: "T1070"
+					tactic:    "defense_evasion"
+					name:      "Partially removed database query audit logs"
+				}
+				emit: [{template: "db_build_query"}, {template: "db_execute_query"}]
+				transitions: [{to: "attack_partial_db_query_remaining", weight: 1}]
+			}
+			attack_partial_db_query_remaining: {
+				kind: "benign"
+				emit: [{template: "db_process_result"}, {template: "db_query_success"}]
+				transitions: [{to: "post_behavior", weight: 1}]
+			}
+			attack_partial_db_update_request: {
+				kind: "benign"
+				emit: [{template: "db_update_request"}]
+				transitions: [{to: "attack_partial_db_update_deleted_execution", weight: 1}]
+			}
+			attack_partial_db_update_deleted_execution: {
+				kind: "attack"
+				attack_label: {
+					type:      "partial:log_tampering"
+					technique: "T1070"
+					tactic:    "defense_evasion"
+					name:      "Partially removed database update audit logs"
+				}
+				emit: [{template: "db_begin_transaction"}, {template: "db_execute_update"}]
+				transitions: [{to: "attack_partial_db_update_remaining", weight: 1}]
+			}
+			attack_partial_db_update_remaining: {
+				kind: "benign"
+				emit: [{template: "db_validate_integrity"}, {template: "db_commit"}, {template: "db_update_success"}]
+				transitions: [{to: "post_behavior", weight: 1}]
+			}
 			post_behavior: {
 				kind: "benign"
 				transitions: [
@@ -968,7 +1117,7 @@ machines: {
 				terminal: true
 			}
 		}
-		description: "Same-type user FSM. Normal behavior starts with login; attack branches can model login bypass, repeated login, and audit-log tampering."
+		description: "Same-type user FSM. Normal behavior starts with login; attack branches can model login bypass, repeated login, complete audit-log tampering, and partial audit-log tampering."
 	}
 	system_health_flow: {
 		system: "system_service"
@@ -1012,7 +1161,7 @@ machines: {
 				transitions: [{to: "monitor_choice", weight: 1}]
 			}
 			system_stop: {
-				kind: "benign"
+				kind:     "benign"
 				terminal: true
 			}
 		}
@@ -1024,13 +1173,13 @@ instance_groups: {
 	users: {
 		machine:     "user_activity_flow"
 		enabled:     true
-		count:       200
+		count:       400
 		description: "Five users running the same finite-state machine"
 	}
 	system: {
 		machine:     "system_health_flow"
 		enabled:     true
-		count:       20
+		count:       40
 		description: "One background system FSM"
 	}
 }
@@ -1049,9 +1198,9 @@ time_profiles: {
 }
 
 scenario: {
-	id:              "user_system_activity_demo"
-	description:     "Benign multi-user activity plus one system FSM; login is mandatory before user actions."
-	systems:         ["app_platform", "system_service"]
+	id:          "user_system_activity_demo"
+	description: "Benign multi-user activity plus one system FSM; login is mandatory before user actions."
+	systems: ["app_platform", "system_service"]
 	instance_groups: ["users", "system"]
-	time_profile:    "default_time"
+	time_profile: "default_time"
 }
