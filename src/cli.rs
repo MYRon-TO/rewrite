@@ -9,6 +9,7 @@ use clap::{Arg, ArgAction, Command, value_parser};
 use crate::{
     error::{IrParseError, Result},
     ir::Ir,
+    machine::runner::MachineRunnerConfig,
     output::{csv::write_events_csv, jsonl::write_events_jsonl},
     runtime::{
         rng::{DEFAULT_SEED, RngManager},
@@ -54,7 +55,11 @@ where
                 .transpose()?
                 .unwrap_or(OutputFormat::Jsonl);
             let seed = subcommand.get_one::<u64>("seed").copied();
-            generate_command(ir_path, out_path, format, seed)
+            let enable_attack = subcommand
+                .get_one::<bool>("enable-attack")
+                .copied()
+                .unwrap_or(true);
+            generate_command(ir_path, out_path, format, seed, enable_attack)
         }
         _ => unreachable!("clap requires a known subcommand"),
     }
@@ -104,7 +109,17 @@ fn command() -> Command {
                         .required(false)
                         .action(ArgAction::Set)
                         .value_parser(value_parser!(u64)),
-                ),
+                )
+                .arg(
+                    Arg::new("enable-attack")
+                        .long("enable-attack")
+                        .value_name("BOOL")
+                        .help("Whether generation may enter attack states. Set to false for clean mode; defaults to true.")
+                        .required(false)
+                        .default_value("true")
+                        .action(ArgAction::Set)
+                        .value_parser(value_parser!(bool)),
+                )
         )
 }
 
@@ -150,10 +165,17 @@ fn generate_command(
     out_path: PathBuf,
     format: OutputFormat,
     seed: Option<u64>,
+    enable_attack: bool,
 ) -> Result<()> {
     let ir = load_and_validate_ir(&ir_path)?;
     let rng_manager = RngManager::from_cli_seed(seed);
-    let generated = generate_scenario(&ir, &rng_manager, ScenarioRunnerConfig::default())?;
+    let config = ScenarioRunnerConfig {
+        machine: MachineRunnerConfig {
+            enable_attack,
+            ..MachineRunnerConfig::default()
+        },
+    };
+    let generated = generate_scenario(&ir, &rng_manager, config)?;
 
     match format {
         OutputFormat::Jsonl => write_events_jsonl(&out_path, generated.events.iter())?,
@@ -161,12 +183,13 @@ fn generate_command(
     }
 
     println!(
-        "Generated {} events from {} to {} as {:?} with seed {}",
+        "Generated {} events from {} to {} as {:?} with seed {} and enable_attack={}",
         generated.events.len(),
         ir_path.display(),
         out_path.display(),
         format,
-        seed.unwrap_or(DEFAULT_SEED)
+        seed.unwrap_or(DEFAULT_SEED),
+        enable_attack
     );
 
     Ok(())
@@ -267,6 +290,52 @@ mod tests {
         let first: serde_json::Value = serde_json::from_str(lines[0]).expect("line is JSON");
         assert_eq!(first["scenario"], serde_json::json!("ssh_bruteforce_demo"));
         assert!(first["label"].get("is_attack").is_some());
+    }
+
+    #[test]
+    fn generate_command_respects_enable_attack_false() {
+        let ir_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/generated/examples/ssh_bruteforce.json"
+        );
+        let out_path = std::env::temp_dir().join(format!(
+            "rewrite-cli-generate-clean-{}-{}.jsonl",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+
+        run_with_args([
+            OsString::from("rewrite"),
+            OsString::from("generate"),
+            OsString::from("--ir"),
+            OsString::from(ir_path),
+            OsString::from("--out"),
+            out_path.clone().into_os_string(),
+            OsString::from("--seed"),
+            OsString::from("42"),
+            OsString::from("--enable-attack"),
+            OsString::from("false"),
+        ])
+        .expect("clean generation should write JSONL");
+
+        let content = std::fs::read_to_string(&out_path).expect("output should be readable");
+        let _ = std::fs::remove_file(out_path);
+        let events = content
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("line is JSON"))
+            .collect::<Vec<_>>();
+
+        assert!(!events.is_empty());
+        assert!(
+            events
+                .iter()
+                .all(|event| event["label"]["is_attack"] == serde_json::json!(false))
+        );
+        assert!(
+            events
+                .iter()
+                .all(|event| event["state"].as_str() != Some("bruteforce"))
+        );
     }
 
     #[test]

@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use crate::{
     context::{ContextStore, ContextValueGenerator, EventContext},
     error::RuntimeError,
-    ir::{Id, Machine, StateKind},
+    ir::{Id, Machine, StateKind, Transition},
     machine::{emit::sample_emit_count_at, sampler::sample_transition},
     runtime::{instance_group::InstancePlan, rng::RuntimeRng, time::InstanceClock},
 };
@@ -28,12 +28,14 @@ pub struct EventDraft {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MachineRunnerConfig {
     pub max_steps: usize,
+    pub enable_attack: bool,
 }
 
 impl Default for MachineRunnerConfig {
     fn default() -> Self {
         Self {
             max_steps: DEFAULT_MAX_STEPS,
+            enable_attack: true,
         }
     }
 }
@@ -71,6 +73,14 @@ where
             RuntimeError::machine_stuck(&machine.id, &current_state_id, "state does not exist")
         })?;
 
+        if !config.enable_attack && state.kind == StateKind::Attack {
+            return Err(RuntimeError::machine_stuck(
+                &machine.id,
+                &current_state_id,
+                "enable_attack=false but runner reached an attack state; clean mode must not execute attack behavior",
+            ));
+        }
+
         for (emit_index, emit) in state.emit.iter().enumerate() {
             let count = sample_emit_count_at(
                 &emit.count,
@@ -106,8 +116,13 @@ where
             return Ok(drafts);
         }
 
-        current_state_id =
-            sample_transition(&machine.id, &current_state_id, &state.transitions, rng)?;
+        current_state_id = sample_next_state(
+            machine,
+            &current_state_id,
+            &state.transitions,
+            rng,
+            config.enable_attack,
+        )?;
 
         if step + 1 == config.max_steps {
             return Err(RuntimeError::step_limit_exceeded(
@@ -121,6 +136,54 @@ where
         &machine.id,
         config.max_steps,
     ))
+}
+
+fn sample_next_state(
+    machine: &Machine,
+    state_id: &str,
+    transitions: &[Transition],
+    rng: &mut RuntimeRng,
+    enable_attack: bool,
+) -> Result<Id, RuntimeError> {
+    if enable_attack {
+        return sample_transition(&machine.id, state_id, transitions, rng);
+    }
+
+    if transitions.is_empty() {
+        return sample_transition(&machine.id, state_id, transitions, rng);
+    }
+
+    let mut allowed = Vec::new();
+    let mut blocked_attack_targets = Vec::new();
+
+    for transition in transitions {
+        let target = machine.states.get(&transition.to).ok_or_else(|| {
+            RuntimeError::machine_stuck(
+                &machine.id,
+                state_id,
+                format!("transition targets missing state `{}`", transition.to),
+            )
+        })?;
+
+        if target.kind == StateKind::Attack {
+            blocked_attack_targets.push(transition.to.clone());
+        } else {
+            allowed.push(transition.clone());
+        }
+    }
+
+    if allowed.is_empty() {
+        return Err(RuntimeError::machine_stuck(
+            &machine.id,
+            state_id,
+            format!(
+                "enable_attack=false filtered out all outgoing transitions because they target attack states [{}]; clean mode requires the CUE machine to provide at least one non-attack transition",
+                blocked_attack_targets.join(", ")
+            ),
+        ));
+    }
+
+    sample_transition(&machine.id, state_id, &allowed, rng)
 }
 
 pub fn run_machine_with_defaults<G>(
@@ -188,15 +251,24 @@ mod tests {
         }
     }
 
-    fn state(terminal: bool, emit: Vec<Emit>, transitions: Vec<Transition>) -> State {
+    fn state_with_kind(
+        kind: StateKind,
+        terminal: bool,
+        emit: Vec<Emit>,
+        transitions: Vec<Transition>,
+    ) -> State {
         State {
-            kind: StateKind::Benign,
+            kind,
             attack_label: None,
             emit,
             transitions,
             terminal,
             description: None,
         }
+    }
+
+    fn state(terminal: bool, emit: Vec<Emit>, transitions: Vec<Transition>) -> State {
+        state_with_kind(StateKind::Benign, terminal, emit, transitions)
     }
 
     fn base_ir(machine: Machine) -> Ir {
@@ -363,7 +435,10 @@ mod tests {
             &mut generator,
             &mut clock,
             &mut rng,
-            MachineRunnerConfig { max_steps: 3 },
+            MachineRunnerConfig {
+                max_steps: 3,
+                ..MachineRunnerConfig::default()
+            },
         )
         .unwrap_err();
 
@@ -400,5 +475,185 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(err, RuntimeError::MachineStuck { .. }));
+    }
+
+    #[test]
+    fn disabled_attack_filters_transitions_into_attack_states() {
+        let machine = Machine {
+            id: "login".to_string(),
+            system: "linux".to_string(),
+            start: "start".to_string(),
+            attack: AttackMetadata {
+                enabled: true,
+                attack_type: Some("ssh_bruteforce".to_string()),
+                technique: None,
+                tactic: None,
+                description: None,
+            },
+            states: BTreeMap::from([
+                (
+                    "start".to_string(),
+                    state(
+                        false,
+                        vec![emit("begin", EmitCount::Fixed(1))],
+                        vec![
+                            Transition {
+                                to: "benign_done".to_string(),
+                                weight: 1.0,
+                            },
+                            Transition {
+                                to: "bruteforce".to_string(),
+                                weight: 999.0,
+                            },
+                        ],
+                    ),
+                ),
+                (
+                    "benign_done".to_string(),
+                    state(true, vec![emit("clean", EmitCount::Fixed(1))], vec![]),
+                ),
+                (
+                    "bruteforce".to_string(),
+                    state_with_kind(
+                        StateKind::Attack,
+                        true,
+                        vec![emit("attack", EmitCount::Fixed(1))],
+                        vec![],
+                    ),
+                ),
+            ]),
+            description: None,
+        };
+        let ir = base_ir(machine.clone());
+        let mut store = ContextStore::new(&ir);
+        let mut generator = NoopGenerator;
+        let mut clock = clock();
+        let mut rng = RuntimeRng::new(42);
+
+        let drafts = run_machine(
+            &machine,
+            &plan(),
+            &mut store,
+            &mut generator,
+            &mut clock,
+            &mut rng,
+            MachineRunnerConfig {
+                enable_attack: false,
+                ..MachineRunnerConfig::default()
+            },
+        )
+        .unwrap();
+
+        let states = drafts
+            .iter()
+            .map(|draft| draft.state_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(states, vec!["start", "benign_done"]);
+        assert!(
+            drafts
+                .iter()
+                .all(|draft| draft.state_kind == StateKind::Benign)
+        );
+    }
+
+    #[test]
+    fn disabled_attack_reports_when_clean_path_is_missing() {
+        let machine = Machine {
+            id: "login".to_string(),
+            system: "linux".to_string(),
+            start: "start".to_string(),
+            attack: AttackMetadata {
+                enabled: true,
+                attack_type: Some("ssh_bruteforce".to_string()),
+                technique: None,
+                tactic: None,
+                description: None,
+            },
+            states: BTreeMap::from([
+                (
+                    "start".to_string(),
+                    state(
+                        false,
+                        vec![],
+                        vec![Transition {
+                            to: "bruteforce".to_string(),
+                            weight: 1.0,
+                        }],
+                    ),
+                ),
+                (
+                    "bruteforce".to_string(),
+                    state_with_kind(StateKind::Attack, true, vec![], vec![]),
+                ),
+            ]),
+            description: None,
+        };
+        let ir = base_ir(machine.clone());
+        let mut store = ContextStore::new(&ir);
+        let mut generator = NoopGenerator;
+        let mut clock = clock();
+        let mut rng = RuntimeRng::new(42);
+
+        let err = run_machine(
+            &machine,
+            &plan(),
+            &mut store,
+            &mut generator,
+            &mut clock,
+            &mut rng,
+            MachineRunnerConfig {
+                enable_attack: false,
+                ..MachineRunnerConfig::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, RuntimeError::MachineStuck { .. }));
+        assert!(err.to_string().contains("enable_attack=false"));
+        assert!(err.to_string().contains("clean mode requires"));
+        assert!(err.to_string().contains("bruteforce"));
+    }
+
+    #[test]
+    fn disabled_attack_reports_if_attack_state_is_reached_anyway() {
+        let machine = Machine {
+            id: "login".to_string(),
+            system: "linux".to_string(),
+            start: "bruteforce".to_string(),
+            attack: AttackMetadata {
+                enabled: true,
+                attack_type: Some("ssh_bruteforce".to_string()),
+                technique: None,
+                tactic: None,
+                description: None,
+            },
+            states: BTreeMap::from([(
+                "bruteforce".to_string(),
+                state_with_kind(StateKind::Attack, true, vec![], vec![]),
+            )]),
+            description: None,
+        };
+        let ir = base_ir(machine.clone());
+        let mut store = ContextStore::new(&ir);
+        let mut generator = NoopGenerator;
+        let mut clock = clock();
+        let mut rng = RuntimeRng::new(42);
+
+        let err = run_machine(
+            &machine,
+            &plan(),
+            &mut store,
+            &mut generator,
+            &mut clock,
+            &mut rng,
+            MachineRunnerConfig {
+                enable_attack: false,
+                ..MachineRunnerConfig::default()
+            },
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("enable_attack=false"));
+        assert!(err.to_string().contains("reached an attack state"));
     }
 }

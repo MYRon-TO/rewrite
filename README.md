@@ -75,6 +75,18 @@ cargo run -- generate \
   --seed 42
 ```
 
+需要生成不进入攻击状态的干净样本时，可以关闭运行时攻击开关：
+
+```bash
+cargo run -- generate \
+  --ir generated/examples/ssh_bruteforce.json \
+  --out out/clean.jsonl \
+  --seed 42 \
+  --enable-attack false
+```
+
+`--enable-attack false` 只影响运行时转移采样：生成器会排除目标状态为 `kind="attack"` 的转移；如果某个非终止状态因此没有可用的非攻击转移，生成会失败并说明原因。它不会修改 IR，也不会强制改写标签。
+
 也可以直接使用 Makefile：
 
 ```bash

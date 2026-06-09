@@ -542,7 +542,10 @@ mod tests {
             &rng_manager,
             &mut generator,
             ScenarioRunnerConfig {
-                machine: MachineRunnerConfig { max_steps: 2 },
+                machine: MachineRunnerConfig {
+                    max_steps: 2,
+                    ..MachineRunnerConfig::default()
+                },
             },
         )
         .unwrap_err();
