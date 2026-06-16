@@ -263,7 +263,46 @@ pub struct TimeProfile {
     pub granularity: TimeGranularity,
     pub monotonic_per_instance: bool,
     pub system_clock_skew: ObjectMap<ClockSkew>,
+    #[serde(default)]
+    pub event_time: Option<EventTimeConfig>,
     pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EventTimeConfig {
+    pub default: BehaviorTimeProfile,
+
+    #[serde(default)]
+    pub event_types: ObjectMap<BehaviorTimeProfile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BehaviorTimeProfile {
+    pub base_delay_ms: TimeDelay,
+    pub behavior_jitter_ms: TimeDelay,
+    pub error_jitter_ms: TimeDelay,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TimeDelay {
+    Fixed(FixedTimeDelay),
+    Range(RangeTimeDelay),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FixedTimeDelay {
+    pub milliseconds: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RangeTimeDelay {
+    pub min_milliseconds: f64,
+    pub max_milliseconds: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1188,11 +1188,40 @@ time_profiles: {
 	default_time: {
 		start:                  "2025-11-19T04:00:00Z"
 		timezone:               "UTC"
-		granularity:            "second"
+		granularity:            "millisecond"
 		monotonic_per_instance: true
 		system_clock_skew: {
 			app_platform: {milliseconds: 0}
 			system_service: {milliseconds: 0}
+		}
+		event_time: {
+			default: {
+				base_delay_ms: {min_milliseconds: 800, max_milliseconds: 2500}
+				behavior_jitter_ms: {min_milliseconds: -250, max_milliseconds: 600}
+				error_jitter_ms: {min_milliseconds: -25, max_milliseconds: 25}
+			}
+			event_types: {
+				user_login: {
+					base_delay_ms: {min_milliseconds: 500, max_milliseconds: 1800}
+					behavior_jitter_ms: {min_milliseconds: -150, max_milliseconds: 500}
+					error_jitter_ms: {min_milliseconds: -20, max_milliseconds: 20}
+				}
+				user_management: {
+					base_delay_ms: {min_milliseconds: 1000, max_milliseconds: 4000}
+					behavior_jitter_ms: {min_milliseconds: -300, max_milliseconds: 1200}
+					error_jitter_ms: {min_milliseconds: -30, max_milliseconds: 30}
+				}
+				file_operation: {
+					base_delay_ms: {min_milliseconds: 1500, max_milliseconds: 8000}
+					behavior_jitter_ms: {min_milliseconds: -500, max_milliseconds: 2500}
+					error_jitter_ms: {min_milliseconds: -40, max_milliseconds: 40}
+				}
+				system_health: {
+					base_delay_ms: {min_milliseconds: 10000, max_milliseconds: 60000}
+					behavior_jitter_ms: {min_milliseconds: -2000, max_milliseconds: 5000}
+					error_jitter_ms: {min_milliseconds: -50, max_milliseconds: 50}
+				}
+			}
 		}
 	}
 }

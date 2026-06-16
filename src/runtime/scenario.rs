@@ -109,6 +109,7 @@ where
         let mut machine_rng = rng_manager.indexed_stream("machine-runner", plan_index as u64);
         let drafts = run_machine(
             machine,
+            &ir.templates,
             plan,
             &mut execution.store,
             execution.generator,
@@ -194,6 +195,7 @@ where
                 .indexed_stream("machine-runner", plan_index as u64);
             let mut instance_events = run_machine(
                 machine,
+                &self.ir.templates,
                 plan,
                 &mut self.store,
                 self.generator,
@@ -432,6 +434,7 @@ mod tests {
                         }),
                     )]),
                     description: None,
+                    event_time: None,
                 },
             )]),
             scenario: Scenario {

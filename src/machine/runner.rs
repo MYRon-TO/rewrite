@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use crate::{
     context::{ContextStore, ContextValueGenerator, EventContext},
     error::RuntimeError,
-    ir::{Id, Machine, StateKind, Transition},
+    ir::{Id, Machine, ObjectMap, StateKind, Template, Transition},
     machine::{emit::sample_emit_count_at, sampler::sample_transition},
     runtime::{instance_group::InstancePlan, rng::RuntimeRng, time::InstanceClock},
 };
@@ -48,6 +48,7 @@ impl Default for MachineRunnerConfig {
 /// would become the runtime junk drawer; nobody wants to debug that goblin nest.
 pub fn run_machine<G>(
     machine: &Machine,
+    templates: &ObjectMap<Template>,
     plan: &InstancePlan,
     store: &mut ContextStore<'_>,
     generator: &mut G,
@@ -98,6 +99,10 @@ where
                     plan.instance_id.clone(),
                     generator,
                 )?;
+                let event_type = templates
+                    .get(&emit.template)
+                    .and_then(|template| template.event_type.as_deref());
+
                 drafts.push(EventDraft {
                     scenario_id: plan.scenario_id.clone(),
                     system_id: plan.system_id.clone(),
@@ -106,7 +111,7 @@ where
                     state_id: current_state_id.clone(),
                     state_kind: state.kind,
                     template_id: emit.template.clone(),
-                    timestamp: clock.next_timestamp(),
+                    timestamp: clock.next_timestamp_for_event_type(event_type, Some(rng)),
                     event_context,
                 });
             }
@@ -197,8 +202,10 @@ pub fn run_machine_with_defaults<G>(
 where
     G: ContextValueGenerator,
 {
+    let templates = ObjectMap::new();
     run_machine(
         machine,
+        &templates,
         plan,
         store,
         generator,
@@ -311,7 +318,7 @@ mod tests {
     }
 
     fn clock() -> InstanceClock {
-        InstanceClock::new(
+        InstanceClock::fixed_tick(
             Utc.with_ymd_and_hms(2026, 5, 17, 0, 0, 0).single().unwrap(),
             Duration::milliseconds(1),
             true,
@@ -430,6 +437,7 @@ mod tests {
 
         let err = run_machine(
             &machine,
+            &ir.templates,
             &plan(),
             &mut store,
             &mut generator,
@@ -532,6 +540,7 @@ mod tests {
 
         let drafts = run_machine(
             &machine,
+            &ir.templates,
             &plan(),
             &mut store,
             &mut generator,
@@ -596,6 +605,7 @@ mod tests {
 
         let err = run_machine(
             &machine,
+            &ir.templates,
             &plan(),
             &mut store,
             &mut generator,
@@ -641,6 +651,7 @@ mod tests {
 
         let err = run_machine(
             &machine,
+            &ir.templates,
             &plan(),
             &mut store,
             &mut generator,

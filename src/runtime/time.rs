@@ -4,7 +4,10 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::{
     error::RuntimeError,
-    ir::{ClockSkew, RangeClockSkew, TimeGranularity, TimeProfile},
+    ir::{
+        BehaviorTimeProfile, ClockSkew, EventTimeConfig, RangeClockSkew, TimeDelay,
+        TimeGranularity, TimeProfile,
+    },
     runtime::rng::RuntimeRng,
 };
 
@@ -21,6 +24,26 @@ pub struct TimeModel {
     granularity: TimeGranularity,
     monotonic_per_instance: bool,
     system_clock_skew: BTreeMap<String, Duration>,
+    event_time: Option<RuntimeEventTimeConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RuntimeEventTimeConfig {
+    default: RuntimeBehaviorTimeProfile,
+    event_types: BTreeMap<String, RuntimeBehaviorTimeProfile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RuntimeBehaviorTimeProfile {
+    base_delay: RuntimeTimeDelay,
+    behavior_jitter: RuntimeTimeDelay,
+    error_jitter: RuntimeTimeDelay,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RuntimeTimeDelay {
+    min: Duration,
+    max: Duration,
 }
 
 impl TimeModel {
@@ -41,12 +64,18 @@ impl TimeModel {
             system_clock_skew.insert(system_id.clone(), skew);
         }
 
+        let event_time = match &profile.event_time {
+            Some(event_time) => Some(runtime_event_time_config(&profile.id, event_time)?),
+            None => None,
+        };
+
         Ok(Self {
             profile_id: profile.id.clone(),
             global_start,
             granularity: profile.granularity,
             monotonic_per_instance: profile.monotonic_per_instance,
             system_clock_skew,
+            event_time,
         })
     }
 
@@ -82,6 +111,7 @@ impl TimeModel {
             self.start_for_system(system_id),
             self.tick(),
             self.monotonic_per_instance,
+            self.event_time.clone(),
         )
     }
 }
@@ -93,16 +123,27 @@ pub struct InstanceClock {
     tick: Duration,
     monotonic: bool,
     last_emitted: Option<DateTime<Utc>>,
+    event_time: Option<RuntimeEventTimeConfig>,
 }
 
 impl InstanceClock {
-    pub fn new(start: DateTime<Utc>, tick: Duration, monotonic: bool) -> Self {
+    fn new(
+        start: DateTime<Utc>,
+        tick: Duration,
+        monotonic: bool,
+        event_time: Option<RuntimeEventTimeConfig>,
+    ) -> Self {
         Self {
             current: start,
             tick,
             monotonic,
             last_emitted: None,
+            event_time,
         }
+    }
+
+    pub fn fixed_tick(start: DateTime<Utc>, tick: Duration, monotonic: bool) -> Self {
+        Self::new(start, tick, monotonic, None)
     }
 
     /// Return the timestamp for the next event in this instance.
@@ -110,21 +151,56 @@ impl InstanceClock {
     /// With MVP defaults (`monotonic=true`), every call advances by exactly one
     /// profile granularity tick after emitting the current timestamp.
     pub fn next_timestamp(&mut self) -> DateTime<Utc> {
+        self.next_timestamp_for_event_type(None, None)
+    }
+
+    pub fn next_timestamp_for_event_type(
+        &mut self,
+        event_type: Option<&str>,
+        rng: Option<&mut RuntimeRng>,
+    ) -> DateTime<Utc> {
+        let candidate = match self.last_emitted {
+            None => self.current,
+            Some(last) => {
+                let delay = self.sample_delay(event_type, rng);
+                last + delay
+            }
+        };
+
         let timestamp = if self.monotonic {
             match self.last_emitted {
-                Some(last) if self.current <= last => last + self.tick,
-                _ => self.current,
+                Some(last) if candidate <= last => last + self.tick,
+                _ => candidate,
             }
         } else {
-            self.current
+            candidate
         };
 
         self.last_emitted = Some(timestamp);
         if self.monotonic {
             self.current = timestamp + self.tick;
+        } else {
+            self.current = timestamp;
         }
 
         timestamp
+    }
+
+    fn sample_delay(&self, event_type: Option<&str>, rng: Option<&mut RuntimeRng>) -> Duration {
+        let Some(event_time) = &self.event_time else {
+            return self.tick;
+        };
+        let Some(rng) = rng else {
+            return self.tick;
+        };
+
+        let profile = event_type
+            .and_then(|event_type| event_time.event_types.get(event_type))
+            .unwrap_or(&event_time.default);
+
+        sample_time_delay(profile.base_delay, rng)
+            + sample_time_delay(profile.behavior_jitter, rng)
+            + sample_time_delay(profile.error_jitter, rng)
     }
 
     pub fn peek(&self) -> DateTime<Utc> {
@@ -139,6 +215,97 @@ pub fn granularity_duration(granularity: TimeGranularity) -> Duration {
         TimeGranularity::Microsecond => Duration::microseconds(1),
         TimeGranularity::Nanosecond => Duration::nanoseconds(1),
     }
+}
+
+fn runtime_event_time_config(
+    profile_id: &str,
+    config: &EventTimeConfig,
+) -> Result<RuntimeEventTimeConfig, RuntimeError> {
+    let mut event_types = BTreeMap::new();
+    for (event_type, profile) in &config.event_types {
+        event_types.insert(
+            event_type.clone(),
+            runtime_behavior_time_profile(
+                profile_id,
+                format!("event_time.event_types.{event_type}"),
+                profile,
+            )?,
+        );
+    }
+
+    Ok(RuntimeEventTimeConfig {
+        default: runtime_behavior_time_profile(profile_id, "event_time.default", &config.default)?,
+        event_types,
+    })
+}
+
+fn runtime_behavior_time_profile(
+    profile_id: &str,
+    location: impl AsRef<str>,
+    profile: &BehaviorTimeProfile,
+) -> Result<RuntimeBehaviorTimeProfile, RuntimeError> {
+    let location = location.as_ref();
+    Ok(RuntimeBehaviorTimeProfile {
+        base_delay: runtime_time_delay(
+            profile_id,
+            format!("{location}.base_delay_ms"),
+            &profile.base_delay_ms,
+        )?,
+        behavior_jitter: runtime_time_delay(
+            profile_id,
+            format!("{location}.behavior_jitter_ms"),
+            &profile.behavior_jitter_ms,
+        )?,
+        error_jitter: runtime_time_delay(
+            profile_id,
+            format!("{location}.error_jitter_ms"),
+            &profile.error_jitter_ms,
+        )?,
+    })
+}
+
+fn runtime_time_delay(
+    profile_id: &str,
+    location: impl AsRef<str>,
+    delay: &TimeDelay,
+) -> Result<RuntimeTimeDelay, RuntimeError> {
+    let location = location.as_ref();
+    let (min, max) = match delay {
+        TimeDelay::Fixed(fixed) => (fixed.milliseconds, fixed.milliseconds),
+        TimeDelay::Range(range) => {
+            if range.min_milliseconds > range.max_milliseconds {
+                return Err(RuntimeError::invalid_time_profile(
+                    profile_id,
+                    location,
+                    "min_milliseconds must be <= max_milliseconds",
+                ));
+            }
+            (range.min_milliseconds, range.max_milliseconds)
+        }
+    };
+
+    if !min.is_finite() || !max.is_finite() {
+        return Err(RuntimeError::invalid_time_profile(
+            profile_id,
+            location,
+            "milliseconds must be finite",
+        ));
+    }
+
+    Ok(RuntimeTimeDelay {
+        min: milliseconds_to_duration_at(profile_id, location, min)?,
+        max: milliseconds_to_duration_at(profile_id, location, max)?,
+    })
+}
+
+fn sample_time_delay(delay: RuntimeTimeDelay, rng: &mut RuntimeRng) -> Duration {
+    if delay.min == delay.max {
+        return delay.min;
+    }
+
+    let min = delay.min.num_nanoseconds().unwrap_or(i64::MIN) as f64;
+    let max = delay.max.num_nanoseconds().unwrap_or(i64::MAX) as f64;
+    Duration::nanoseconds((min + ((max - min) * rng.next_f64())).round() as i64)
 }
 
 fn sample_clock_skew(
@@ -164,19 +331,24 @@ fn sample_clock_skew(
         }
     };
 
-    milliseconds_to_duration(profile_id, system_id, milliseconds)
+    milliseconds_to_duration_at(
+        profile_id,
+        format!("system_clock_skew.{system_id}"),
+        milliseconds,
+    )
 }
 
-fn milliseconds_to_duration(
+fn milliseconds_to_duration_at(
     profile_id: &str,
-    system_id: &str,
+    location: impl AsRef<str>,
     milliseconds: f64,
 ) -> Result<Duration, RuntimeError> {
+    let location = location.as_ref();
     if !milliseconds.is_finite() {
         return Err(RuntimeError::invalid_time_profile(
             profile_id,
-            format!("system_clock_skew.{system_id}"),
-            "clock skew milliseconds must be finite",
+            location,
+            "milliseconds must be finite",
         ));
     }
 
@@ -184,8 +356,8 @@ fn milliseconds_to_duration(
     if nanoseconds < i64::MIN as f64 || nanoseconds > i64::MAX as f64 {
         return Err(RuntimeError::invalid_time_profile(
             profile_id,
-            format!("system_clock_skew.{system_id}"),
-            "clock skew is outside supported duration range",
+            location,
+            "milliseconds value is outside supported duration range",
         ));
     }
 
@@ -205,6 +377,7 @@ mod tests {
             granularity: TimeGranularity::Millisecond,
             monotonic_per_instance: true,
             system_clock_skew: BTreeMap::new(),
+            event_time: None,
             description: None,
         }
     }
