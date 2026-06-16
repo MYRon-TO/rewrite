@@ -495,15 +495,23 @@ mod tests {
     }
 
     #[test]
-    fn username_uses_a_plus_b_shape() {
+    fn username_uses_a_plus_b_plus_number_shape() {
         let generator = make_generator("username", json!({"a":["red"],"b":["fox"]}));
         let mut builtins = BuiltinGenerator::with_seed(17);
 
-        assert_eq!(
-            builtins
-                .generate_value(&generator, &JsonObject::new(), "test")
-                .unwrap(),
-            json!("redfox")
+        let value = builtins
+            .generate_value(&generator, &JsonObject::new(), "test")
+            .unwrap();
+        let value = value.as_str().unwrap();
+
+        assert!(
+            value.starts_with("redfox"),
+            "username should keep the configured a+b prefix"
+        );
+        let suffix = &value["redfox".len()..];
+        assert!(
+            suffix.parse::<u8>().is_ok(),
+            "username should append a numeric suffix, got `{suffix}`"
         );
     }
 

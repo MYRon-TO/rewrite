@@ -158,7 +158,7 @@ mod tests {
         let timestamp = Utc.with_ymd_and_hms(2026, 5, 17, 0, 0, 0).single().unwrap();
         let fields = JsonObject::from([
             ("host".to_owned(), json!("auth-01")),
-            ("message".to_owned(), json!("login failed")),
+            ("content".to_owned(), json!("login failed")),
             ("user".to_owned(), json!("root")),
         ]);
         let metadata = EventMetadata::new(
