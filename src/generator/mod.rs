@@ -1,4 +1,5 @@
 mod const_str;
+mod machine_secret;
 
 use std::{collections::BTreeMap, net::Ipv4Addr};
 
@@ -27,6 +28,7 @@ pub const BUILTIN_GENERATOR_TYPES: &[&str] = &[
     "uuid",
     "session_id",
     "sequence",
+    "machine_secret",
 ];
 
 pub fn is_builtin_generator_type(generator_type: &str) -> bool {
@@ -63,6 +65,7 @@ impl BuiltinGenerator {
             "session_id" => Ok(Value::String(format!("sess-{}", self.hex_bytes(16)))),
             "sequence" => self.sequence(generator, params, location),
             "simple_filename" => self.simple_filename(generator, params, location),
+            "machine_secret" => machine_secret::generate(&mut self.rng, generator, params, location),
             other => Err(invalid(
                 location,
                 format!(
@@ -164,7 +167,6 @@ impl BuiltinGenerator {
 
         Ok(Ipv4Addr::from(network | host).to_string())
     }
-
 
     fn simple_filename(
         &mut self,
