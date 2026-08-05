@@ -25,7 +25,7 @@ system
 - `template` 定义一条日志长什么样。
 - `machine` 定义行为状态机。
 - `instance_group` 定义同一个状态机跑多少份实例。
-- `time_profile` 定义基础时间配置。
+- `time_profile` 定义时间起点、clock skew，以及可选的行为节奏和抖动。
 - `scenario` 定义本次仿真的入口。
 
 Rust 运行时不读取 CUE。你写的 CUE 会先通过 `cue export` 导出成 JSON IR，再由 `rewrite validate` 和 `rewrite generate` 处理。别把 CUE 写成执行脚本；CUE 在这里是定义和校验工具，不是披着配置皮的小型运行时。
@@ -438,7 +438,9 @@ instance_groups: {
 - 拥有独立的 `instance` 上下文。
 - 不支持实例之间通信、触发或依赖。
 
-### 4.8 `time_profile`：基础时间配置
+### 4.8 `time_profile`：时间起点、抖动和行为节奏
+
+基础配置：
 
 ```cue
 time_profiles: {
@@ -455,7 +457,114 @@ time_profiles: {
 }
 ```
 
-当前版本支持全局起始时间、时间粒度、单实例时间单调和系统级 clock skew。不支持复杂因果时间约束。
+字段含义：
+
+- `start`：全局起始时间，使用 RFC3339 格式。
+- `timezone`：当前建议使用 `UTC`。
+- `granularity`：最小推进粒度，支持 `second`、`millisecond`、`microsecond`、`nanosecond`。
+- `monotonic_per_instance`：同一实例内时间是否保证不倒退。
+- `system_clock_skew`：系统级时钟偏移，支持固定值或范围值。
+
+固定偏移：
+
+```cue
+system_clock_skew: {
+	linux_auth: {milliseconds: 0}
+	web_access: {milliseconds: 250}
+}
+```
+
+范围偏移：
+
+```cue
+system_clock_skew: {
+	linux_auth: {min_milliseconds: -50, max_milliseconds: 50}
+}
+```
+
+#### 4.8.1 `event_time`：行为节奏和抖动
+
+如果不配置 `event_time`，运行时会按 `granularity` 固定 tick 推进。要生成更拟真的日志，可以配置：
+
+```text
+下一条事件时间 = 上一条事件时间
+  + base_delay_ms
+  + behavior_jitter_ms
+  + error_jitter_ms
+```
+
+`event_time` 使用三层优先级：
+
+```text
+states.<machine_id>.<state_id> > event_types.<event_type> > default
+```
+
+示例：
+
+```cue
+time_profiles: {
+	default_time: {
+		start:                  "2026-05-17T00:00:00Z"
+		timezone:               "UTC"
+		granularity:            "millisecond"
+		monotonic_per_instance: true
+		system_clock_skew: {
+			linux_auth: {milliseconds: 0}
+		}
+
+		event_time: {
+			default: {
+				base_delay_ms: {min_milliseconds: 800, max_milliseconds: 2500}
+				behavior_jitter_ms: {min_milliseconds: -200, max_milliseconds: 500}
+				error_jitter_ms: {min_milliseconds: -20, max_milliseconds: 20}
+			}
+
+			event_types: {
+				ssh_login_failed: {
+					base_delay_ms: {min_milliseconds: 700, max_milliseconds: 2200}
+					behavior_jitter_ms: {min_milliseconds: -200, max_milliseconds: 500}
+					error_jitter_ms: {min_milliseconds: -20, max_milliseconds: 20}
+				}
+			}
+
+			states: {
+				ssh_login_flow: {
+					bruteforce: {
+						base_delay_ms: {min_milliseconds: 20, max_milliseconds: 80}
+						behavior_jitter_ms: {min_milliseconds: -10, max_milliseconds: 30}
+						error_jitter_ms: {min_milliseconds: -2, max_milliseconds: 2}
+					}
+				}
+			}
+		}
+	}
+}
+```
+
+这里 `states.ssh_login_flow.bruteforce` 会覆盖 `event_types.ssh_login_failed`，适合模拟高频 burst。慢速扫描也用 state 级覆盖，别靠乱造一堆 `event_type` 硬凑，那个配置会长得像被猫踩过的键盘。
+
+#### 4.8.2 时间延迟字段写法
+
+`base_delay_ms`、`behavior_jitter_ms`、`error_jitter_ms` 都支持两种写法。
+
+固定值：
+
+```cue
+base_delay_ms: {milliseconds: 1000}
+```
+
+范围值：
+
+```cue
+base_delay_ms: {min_milliseconds: 500, max_milliseconds: 1800}
+```
+
+建议：
+
+- `default` 写通用节奏。
+- `event_types` 写大类行为节奏，例如登录、文件操作、系统监控。
+- `states` 只写特殊状态，例如高频 burst、慢速扫描、长时间等待。
+- 如果 `behavior_jitter_ms + error_jitter_ms` 导致时间不递增，且 `monotonic_per_instance: true`，运行时会至少推进一个 `granularity` tick。
 
 ### 4.9 `scenario`：唯一运行入口
 

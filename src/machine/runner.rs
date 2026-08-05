@@ -111,7 +111,12 @@ where
                     state_id: current_state_id.clone(),
                     state_kind: state.kind,
                     template_id: emit.template.clone(),
-                    timestamp: clock.next_timestamp_for_event_type(event_type, Some(rng)),
+                    timestamp: clock.next_timestamp_for_behavior(
+                        Some(&machine.id),
+                        Some(&current_state_id),
+                        event_type,
+                        Some(rng),
+                    ),
                     event_context,
                 });
             }

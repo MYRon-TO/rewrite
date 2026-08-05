@@ -1222,6 +1222,15 @@ time_profiles: {
 					error_jitter_ms: {min_milliseconds: -50, max_milliseconds: 50}
 				}
 			}
+			states: {
+				user_activity_flow: {
+					attack_multiple_login: {
+						base_delay_ms: {min_milliseconds: 20, max_milliseconds: 80}
+						behavior_jitter_ms: {min_milliseconds: -10, max_milliseconds: 30}
+						error_jitter_ms: {min_milliseconds: -2, max_milliseconds: 2}
+					}
+				}
+			}
 		}
 	}
 }

@@ -20,6 +20,11 @@ package rewrite
 		event_types?: *close({}) | {
 			[EventType=string]: #BehaviorTimeProfile
 		}
+		states?: *close({}) | {
+			[MachineID=#Identifier]: {
+				[StateID=#Identifier]: #BehaviorTimeProfile
+			}
+		}
 	})
 	description?: string
 })

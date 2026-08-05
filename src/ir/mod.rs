@@ -275,6 +275,9 @@ pub struct EventTimeConfig {
 
     #[serde(default)]
     pub event_types: ObjectMap<BehaviorTimeProfile>,
+
+    #[serde(default)]
+    pub states: ObjectMap<ObjectMap<BehaviorTimeProfile>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

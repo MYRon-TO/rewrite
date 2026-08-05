@@ -300,6 +300,39 @@ time_profiles: {
 		system_clock_skew: {
 			linux_auth: {milliseconds: 0}
 		}
+		event_time: {
+			default: {
+				base_delay_ms: {min_milliseconds: 800, max_milliseconds: 2500}
+				behavior_jitter_ms: {min_milliseconds: -200, max_milliseconds: 500}
+				error_jitter_ms: {min_milliseconds: -20, max_milliseconds: 20}
+			}
+			event_types: {
+				ssh_login_success: {
+					base_delay_ms: {min_milliseconds: 500, max_milliseconds: 1500}
+					behavior_jitter_ms: {min_milliseconds: -100, max_milliseconds: 300}
+					error_jitter_ms: {min_milliseconds: -20, max_milliseconds: 20}
+				}
+				ssh_login_failed: {
+					base_delay_ms: {min_milliseconds: 700, max_milliseconds: 2200}
+					behavior_jitter_ms: {min_milliseconds: -200, max_milliseconds: 500}
+					error_jitter_ms: {min_milliseconds: -20, max_milliseconds: 20}
+				}
+			}
+			states: {
+				ssh_login_flow: {
+					bruteforce: {
+						base_delay_ms: {min_milliseconds: 20, max_milliseconds: 80}
+						behavior_jitter_ms: {min_milliseconds: -10, max_milliseconds: 30}
+						error_jitter_ms: {min_milliseconds: -2, max_milliseconds: 2}
+					}
+					attack_success: {
+						base_delay_ms: {min_milliseconds: 800, max_milliseconds: 3000}
+						behavior_jitter_ms: {min_milliseconds: -200, max_milliseconds: 1000}
+						error_jitter_ms: {min_milliseconds: -20, max_milliseconds: 20}
+					}
+				}
+			}
+		}
 	}
 }
 

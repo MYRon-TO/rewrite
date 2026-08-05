@@ -31,6 +31,7 @@ pub struct TimeModel {
 struct RuntimeEventTimeConfig {
     default: RuntimeBehaviorTimeProfile,
     event_types: BTreeMap<String, RuntimeBehaviorTimeProfile>,
+    states: BTreeMap<String, BTreeMap<String, RuntimeBehaviorTimeProfile>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,10 +160,20 @@ impl InstanceClock {
         event_type: Option<&str>,
         rng: Option<&mut RuntimeRng>,
     ) -> DateTime<Utc> {
+        self.next_timestamp_for_behavior(None, None, event_type, rng)
+    }
+
+    pub fn next_timestamp_for_behavior(
+        &mut self,
+        machine_id: Option<&str>,
+        state_id: Option<&str>,
+        event_type: Option<&str>,
+        rng: Option<&mut RuntimeRng>,
+    ) -> DateTime<Utc> {
         let candidate = match self.last_emitted {
             None => self.current,
             Some(last) => {
-                let delay = self.sample_delay(event_type, rng);
+                let delay = self.sample_delay(machine_id, state_id, event_type, rng);
                 last + delay
             }
         };
@@ -186,7 +197,13 @@ impl InstanceClock {
         timestamp
     }
 
-    fn sample_delay(&self, event_type: Option<&str>, rng: Option<&mut RuntimeRng>) -> Duration {
+    fn sample_delay(
+        &self,
+        machine_id: Option<&str>,
+        state_id: Option<&str>,
+        event_type: Option<&str>,
+        rng: Option<&mut RuntimeRng>,
+    ) -> Duration {
         let Some(event_time) = &self.event_time else {
             return self.tick;
         };
@@ -194,8 +211,13 @@ impl InstanceClock {
             return self.tick;
         };
 
-        let profile = event_type
-            .and_then(|event_type| event_time.event_types.get(event_type))
+        let state_profile = machine_id
+            .and_then(|machine_id| event_time.states.get(machine_id))
+            .and_then(|states| state_id.and_then(|state_id| states.get(state_id)));
+        let event_type_profile =
+            event_type.and_then(|event_type| event_time.event_types.get(event_type));
+        let profile = state_profile
+            .or(event_type_profile)
             .unwrap_or(&event_time.default);
 
         sample_time_delay(profile.base_delay, rng)
@@ -233,9 +255,26 @@ fn runtime_event_time_config(
         );
     }
 
+    let mut states = BTreeMap::new();
+    for (machine_id, machine_states) in &config.states {
+        let mut runtime_states = BTreeMap::new();
+        for (state_id, profile) in machine_states {
+            runtime_states.insert(
+                state_id.clone(),
+                runtime_behavior_time_profile(
+                    profile_id,
+                    format!("event_time.states.{machine_id}.{state_id}"),
+                    profile,
+                )?,
+            );
+        }
+        states.insert(machine_id.clone(), runtime_states);
+    }
+
     Ok(RuntimeEventTimeConfig {
         default: runtime_behavior_time_profile(profile_id, "event_time.default", &config.default)?,
         event_types,
+        states,
     })
 }
 
