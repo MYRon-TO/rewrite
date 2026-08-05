@@ -68,7 +68,7 @@ for example in "${examples[@]}"; do
     exit 1
   fi
 
-  cmd=(cue vet -E -c -d '#IR')
+  cmd=(cue vet -E -c)
   cmd+=("${schema_files[@]}" "$example")
 
   echo "[cue-invalid] expecting validation failure for $example"
@@ -79,8 +79,14 @@ for example in "${examples[@]}"; do
   if "${cmd[@]}" >"$tmp_out" 2>"$tmp_err"; then
     echo "[cue-invalid] unexpected pass: $example" >&2
     unexpected_passes=$((unexpected_passes + 1))
+  elif grep -q -- '-d/--schema flag requires non-CUE input files' "$tmp_err"; then
+    echo "[cue-invalid] CLI usage error while validating $example:" >&2
+    cat "$tmp_err" >&2
+    rm -f "$tmp_out" "$tmp_err"
+    exit 1
   else
     echo "[cue-invalid] rejected as expected: $example"
+    sed 's/^/  /' "$tmp_err"
   fi
   rm -f "$tmp_out" "$tmp_err"
 done

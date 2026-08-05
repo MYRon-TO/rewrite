@@ -16,8 +16,8 @@ use crate::{
         scenario::{ScenarioRunnerConfig, generate_scenario},
     },
     validate::{
-        MachineValidationWarning, validate_drift, validate_identity, validate_machines,
-        validate_references,
+        MachineValidationWarning, validate_drift, validate_generators, validate_identity,
+        validate_machines, validate_references,
     },
 };
 
@@ -205,6 +205,7 @@ fn load_and_validate_ir(ir_path: &Path) -> Result<Ir> {
     let ir = Ir::from_json_str(&ir_content, ir_path.display().to_string())?;
 
     validate_identity(&ir)?;
+    validate_generators(&ir)?;
     validate_references(&ir)?;
     let report = validate_machines(&ir)?;
 

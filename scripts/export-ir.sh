@@ -100,7 +100,7 @@ for example in "${examples[@]}"; do
   if "${cmd[@]}"; then
     if ((${#schema_files[@]} > 0)); then
       vet_cmd=(cue vet -E -c -d '#IR' "${schema_files[@]}" "$tmp_file")
-      echo "[cue-export] validating exported IR against #IR"
+      echo "[cue-export] validating exported IR against closed #IR schema"
       print_cmd "${vet_cmd[@]}"
       if ! "${vet_cmd[@]}"; then
         rm -f "$tmp_file"

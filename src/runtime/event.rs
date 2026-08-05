@@ -134,7 +134,7 @@ mod tests {
 
     fn empty_ir() -> Ir {
         Ir {
-            ir_version: "0.1".to_owned(),
+            ir_version: "0.2".to_owned(),
             systems: ObjectMap::new(),
             generators: ObjectMap::new(),
             context: Context::default(),

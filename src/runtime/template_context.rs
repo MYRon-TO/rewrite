@@ -103,7 +103,7 @@ mod tests {
 
     fn test_ir() -> Ir {
         Ir {
-            ir_version: "0.1".to_owned(),
+            ir_version: "0.2".to_owned(),
             systems: BTreeMap::from([(
                 "linux".to_owned(),
                 System {

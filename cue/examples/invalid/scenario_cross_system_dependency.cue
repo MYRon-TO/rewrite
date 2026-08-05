@@ -1,6 +1,6 @@
 package rewrite
 
-ir_version: "0.1"
+ir_version: "0.2"
 systems: {a: {}, b: {}}
 machines: {m: {system: "a", start: "s", states: {s: {terminal: true}}}}
 instance_groups: {g: {machine: "m", count: 1}}

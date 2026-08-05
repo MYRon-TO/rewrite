@@ -1,5 +1,5 @@
 {
-    "ir_version": "0.1",
+    "ir_version": "0.2",
     "systems": {
         "linux_auth": {
             "id": "linux_auth",

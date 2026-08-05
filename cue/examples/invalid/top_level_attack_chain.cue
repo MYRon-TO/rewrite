@@ -1,6 +1,6 @@
 package rewrite
 
-ir_version: "0.1"
+ir_version: "0.2"
 attack_chain: {steps: ["bruteforce", "login"]}
 systems: {s: {}}
 machines: {m: {system: "s", start: "a", states: {a: {terminal: true}}}}

@@ -84,9 +84,6 @@ for example in "${examples[@]}"; do
   else
     cmd+=(-c)
   fi
-  if ((${#schema_files[@]} > 0)); then
-    cmd+=(-d '#IR')
-  fi
   cmd+=("${schema_files[@]}" "$example")
 
   echo "[cue-validate] validating $example"

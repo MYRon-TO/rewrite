@@ -5,7 +5,7 @@ package rewrite
 // machine, benign and attack branches, state-level attack-label override,
 // emit.count range, context references and template reuse.
 
-ir_version: "0.1"
+ir_version: "0.2"
 
 systems: {
 	linux_auth: {

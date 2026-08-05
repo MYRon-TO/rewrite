@@ -359,7 +359,7 @@ mod tests {
         );
         let ir = Ir::from_path(path).expect("generated example should deserialize");
 
-        assert_eq!(ir.ir_version, "0.1");
+        assert_eq!(ir.ir_version, "0.2");
         assert!(ir.systems.contains_key("linux_auth"));
         assert!(ir.generators.contains_key("username_pool"));
         assert!(ir.templates.contains_key("ssh_login_failed"));

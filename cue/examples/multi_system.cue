@@ -4,7 +4,7 @@ package rewrite
 // It demonstrates that different systems can participate in one scenario while
 // sharing global context and avoiding cross-system dependencies or causality.
 
-ir_version: "0.1"
+ir_version: "0.2"
 
 systems: {
 	linux_auth: {

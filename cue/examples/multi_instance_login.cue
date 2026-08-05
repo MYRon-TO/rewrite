@@ -4,7 +4,7 @@ package rewrite
 // It demonstrates that several machine instances share global/system context
 // while each instance keeps its own instance-scoped variables.
 
-ir_version: "0.1"
+ir_version: "0.2"
 
 systems: {
 	linux_auth: {

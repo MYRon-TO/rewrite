@@ -7,7 +7,7 @@ package rewrite
 // - Each login attempt can fail, retry, or abort; at most three attempts are modeled.
 // - Attack behavior is intentionally disabled.
 
-ir_version: "0.1"
+ir_version: "0.2"
 
 systems: {
 	app_platform: {

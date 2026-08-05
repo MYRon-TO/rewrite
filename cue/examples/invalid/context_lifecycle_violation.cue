@@ -1,6 +1,6 @@
 package rewrite
 
-ir_version: "0.1"
+ir_version: "0.2"
 systems: {s: {}}
 context: {global: {bad: {source: {ref: "ctx.event.once"}}}, event: {once: {source: {const: "x"}}}}
 machines: {m: {system: "s", start: "a", states: {a: {terminal: true}}}}

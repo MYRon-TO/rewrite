@@ -332,7 +332,7 @@ mod tests {
 
     fn test_ir() -> Ir {
         Ir {
-            ir_version: "0.1".to_string(),
+            ir_version: "0.2".to_string(),
             systems: BTreeMap::from([
                 (
                     "linux".to_string(),

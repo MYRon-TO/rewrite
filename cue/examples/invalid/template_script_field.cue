@@ -1,6 +1,6 @@
 package rewrite
 
-ir_version: "0.1"
+ir_version: "0.2"
 systems: {s: {}}
 templates: {t: {system: "s", fields: {script: {const: "rm -rf /"}}}}
 machines: {m: {system: "s", start: "a", states: {a: {emit: [{template: "t"}], terminal: true}}}}

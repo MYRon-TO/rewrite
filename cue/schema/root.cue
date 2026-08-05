@@ -178,13 +178,10 @@ package rewrite
 // package root, so top-level closure is enforced by validating the exported JSON
 // against this definition in scripts/export-ir.sh.
 #IR: close({
-	ir_version: *"0.1" | string
+	ir_version: "0.2"
+	generators?: [ID=#Identifier]: #Generator & {id: ID}
 
 	systems?: [ID=#Identifier]: #System & {
-		id: ID
-	}
-
-	generators?: [ID=#Identifier]: #Generator & {
 		id: ID
 	}
 
@@ -209,7 +206,7 @@ package rewrite
 	scenario: #Scenario
 })
 
-ir_version: *"0.1" | string
+ir_version: "0.2"
 
 systems?: [ID=#Identifier]: #System & {
 	id: ID
