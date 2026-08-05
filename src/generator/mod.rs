@@ -1,7 +1,13 @@
 mod const_str;
+pub(crate) mod corpus_cache;
+mod corpus_choice;
 mod machine_secret;
 
-use std::{collections::BTreeMap, net::Ipv4Addr};
+use std::{
+    collections::BTreeMap,
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+};
 
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use serde_json::{Number, Value};
@@ -29,23 +35,48 @@ pub const BUILTIN_GENERATOR_TYPES: &[&str] = &[
     "session_id",
     "sequence",
     "machine_secret",
+    "corpus_choice",
 ];
 
 pub fn is_builtin_generator_type(generator_type: &str) -> bool {
     BUILTIN_GENERATOR_TYPES.contains(&generator_type)
 }
 
+pub(crate) fn validate_corpus(
+    cache: &mut corpus_cache::CorpusCache,
+    asset_root: &Path,
+    generator: &Generator,
+    params: &JsonObject,
+    location: &str,
+) -> Result<(), String> {
+    corpus_choice::validate_and_load(cache, asset_root, generator, params, location)
+}
+
+pub(crate) fn new_corpus_cache() -> corpus_cache::CorpusCache {
+    corpus_cache::CorpusCache::default()
+}
+
 #[derive(Debug)]
 pub struct BuiltinGenerator {
     rng: StdRng,
     sequences: BTreeMap<String, i64>,
+    asset_root: PathBuf,
+    corpus_cache: corpus_cache::CorpusCache,
+    corpus_states: corpus_choice::SamplingStates,
 }
 
 impl BuiltinGenerator {
     pub fn with_seed(seed: u64) -> Self {
+        Self::with_seed_and_asset_root(seed, Path::new("."))
+    }
+
+    pub fn with_seed_and_asset_root(seed: u64, asset_root: &Path) -> Self {
         Self {
             rng: StdRng::seed_from_u64(seed),
             sequences: BTreeMap::new(),
+            asset_root: asset_root.to_owned(),
+            corpus_cache: corpus_cache::CorpusCache::default(),
+            corpus_states: corpus_choice::SamplingStates::default(),
         }
     }
 
@@ -60,12 +91,25 @@ impl BuiltinGenerator {
             "choice" => self.choice(generator, params, location),
             "number_range" | "range" => self.number_range(generator, params, location),
             "ipv4" => self.ipv4(generator, params, location),
-            "username" | "simple_username" | "simple_words" => self.simple_username(generator, params, location),
+            "username" | "simple_username" | "simple_words" => {
+                self.simple_username(generator, params, location)
+            }
             "uuid" => Ok(Value::String(self.uuid_v4())),
             "session_id" => Ok(Value::String(format!("sess-{}", self.hex_bytes(16)))),
             "sequence" => self.sequence(generator, params, location),
             "simple_filename" => self.simple_filename(generator, params, location),
-            "machine_secret" => machine_secret::generate(&mut self.rng, generator, params, location),
+            "machine_secret" => {
+                machine_secret::generate(&mut self.rng, generator, params, location)
+            }
+            "corpus_choice" => corpus_choice::generate(
+                &mut self.rng,
+                &mut self.corpus_cache,
+                &mut self.corpus_states,
+                &self.asset_root,
+                generator,
+                params,
+                location,
+            ),
             other => Err(invalid(
                 location,
                 format!(
@@ -174,25 +218,18 @@ impl BuiltinGenerator {
         params: &JsonObject,
         location: &str,
     ) -> Result<Value, RuntimeError> {
-        let a_values = string_array_param(generator, params, "a", location)?.unwrap_or_else(|| {
-            DEFAULT_ADJ
-                .iter()
-                .map(|value| value.to_string())
-                .collect()
-        });
-        let b_values = string_array_param(generator, params, "b", location)?.unwrap_or_else(|| {
-            DEFAULT_NAME
-                .iter()
-                .map(|value| value.to_string())
-                .collect()
-        });
+        let a_values = string_array_param(generator, params, "a", location)?
+            .unwrap_or_else(|| DEFAULT_ADJ.iter().map(|value| value.to_string()).collect());
+        let b_values = string_array_param(generator, params, "b", location)?
+            .unwrap_or_else(|| DEFAULT_NAME.iter().map(|value| value.to_string()).collect());
 
-        let file_suffix = string_array_param(generator, params, "c", location)?.unwrap_or_else(|| {
-            DEFAULT_FILE_SUFFIX
-                .iter()
-                .map(|value| value.to_string())
-                .collect()
-        });
+        let file_suffix =
+            string_array_param(generator, params, "c", location)?.unwrap_or_else(|| {
+                DEFAULT_FILE_SUFFIX
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect()
+            });
 
         if a_values.is_empty() || b_values.is_empty() || file_suffix.is_empty() {
             return Err(invalid(
@@ -214,18 +251,10 @@ impl BuiltinGenerator {
         params: &JsonObject,
         location: &str,
     ) -> Result<Value, RuntimeError> {
-        let a_values = string_array_param(generator, params, "a", location)?.unwrap_or_else(|| {
-            DEFAULT_ADJ
-                .iter()
-                .map(|value| value.to_string())
-                .collect()
-        });
-        let b_values = string_array_param(generator, params, "b", location)?.unwrap_or_else(|| {
-            DEFAULT_NAME
-                .iter()
-                .map(|value| value.to_string())
-                .collect()
-        });
+        let a_values = string_array_param(generator, params, "a", location)?
+            .unwrap_or_else(|| DEFAULT_ADJ.iter().map(|value| value.to_string()).collect());
+        let b_values = string_array_param(generator, params, "b", location)?
+            .unwrap_or_else(|| DEFAULT_NAME.iter().map(|value| value.to_string()).collect());
 
         if a_values.is_empty() || b_values.is_empty() {
             return Err(invalid(

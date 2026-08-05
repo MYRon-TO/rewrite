@@ -16,8 +16,8 @@ use crate::{
         scenario::{ScenarioRunnerConfig, generate_scenario},
     },
     validate::{
-        MachineValidationWarning, validate_drift, validate_generators, validate_identity,
-        validate_machines, validate_references,
+        MachineValidationWarning, validate_drift, validate_generators_with_asset_root,
+        validate_identity, validate_machines, validate_references,
     },
 };
 
@@ -38,7 +38,8 @@ where
                 .get_one::<PathBuf>("ir")
                 .expect("clap requires --ir")
                 .clone();
-            validate_command(ir_path)
+            let asset_dir = subcommand.get_one::<PathBuf>("asset-dir").cloned();
+            validate_command(ir_path, asset_dir)
         }
         Some(("generate", subcommand)) => {
             let ir_path = subcommand
@@ -59,7 +60,8 @@ where
                 .get_one::<bool>("enable-attack")
                 .copied()
                 .unwrap_or(true);
-            generate_command(ir_path, out_path, format, seed, enable_attack)
+            let asset_dir = subcommand.get_one::<PathBuf>("asset-dir").cloned();
+            generate_command(ir_path, out_path, format, seed, enable_attack, asset_dir)
         }
         _ => unreachable!("clap requires a known subcommand"),
     }
@@ -76,7 +78,8 @@ fn command() -> Command {
                 .about(
                     "Read and statically validate a generated JSON IR file; does not generate logs",
                 )
-                .arg(ir_arg()),
+                .arg(ir_arg())
+                .arg(asset_dir_arg()),
         )
         .subcommand(
             Command::new("generate")
@@ -120,6 +123,7 @@ fn command() -> Command {
                         .action(ArgAction::Set)
                         .value_parser(value_parser!(bool)),
                 )
+                .arg(asset_dir_arg())
         )
 }
 
@@ -133,8 +137,27 @@ fn ir_arg() -> Arg {
         .value_parser(value_parser!(PathBuf))
 }
 
-fn validate_command(ir_path: PathBuf) -> Result<()> {
-    let _ir = load_and_validate_ir(&ir_path)?;
+fn asset_dir_arg() -> Arg {
+    Arg::new("asset-dir")
+        .long("asset-dir")
+        .value_name("PATH")
+        .help("Root directory for relative corpus asset paths; defaults to the IR file directory")
+        .action(ArgAction::Set)
+        .value_parser(value_parser!(PathBuf))
+}
+
+fn asset_root(ir_path: &Path, explicit: Option<PathBuf>) -> PathBuf {
+    explicit.unwrap_or_else(|| {
+        ir_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .to_path_buf()
+    })
+}
+
+fn validate_command(ir_path: PathBuf, asset_dir: Option<PathBuf>) -> Result<()> {
+    let root = asset_root(&ir_path, asset_dir);
+    let _ir = load_and_validate_ir(&ir_path, &root)?;
 
     println!("IR validation passed: {}", ir_path.display());
 
@@ -166,14 +189,17 @@ fn generate_command(
     format: OutputFormat,
     seed: Option<u64>,
     enable_attack: bool,
+    asset_dir: Option<PathBuf>,
 ) -> Result<()> {
-    let ir = load_and_validate_ir(&ir_path)?;
+    let root = asset_root(&ir_path, asset_dir);
+    let ir = load_and_validate_ir(&ir_path, &root)?;
     let rng_manager = RngManager::from_cli_seed(seed);
     let config = ScenarioRunnerConfig {
         machine: MachineRunnerConfig {
             enable_attack,
             ..MachineRunnerConfig::default()
         },
+        asset_root: root,
     };
     let generated = generate_scenario(&ir, &rng_manager, config)?;
 
@@ -195,7 +221,7 @@ fn generate_command(
     Ok(())
 }
 
-fn load_and_validate_ir(ir_path: &Path) -> Result<Ir> {
+fn load_and_validate_ir(ir_path: &Path, asset_root: &Path) -> Result<Ir> {
     let ir_content = read_json_ir_content(ir_path)?;
     let raw_ir = serde_json::from_str(&ir_content)
         .map_err(|source| IrParseError::json(ir_path.display().to_string(), source))?;
@@ -205,7 +231,7 @@ fn load_and_validate_ir(ir_path: &Path) -> Result<Ir> {
     let ir = Ir::from_json_str(&ir_content, ir_path.display().to_string())?;
 
     validate_identity(&ir)?;
-    validate_generators(&ir)?;
+    validate_generators_with_asset_root(&ir, asset_root)?;
     validate_references(&ir)?;
     let report = validate_machines(&ir)?;
 

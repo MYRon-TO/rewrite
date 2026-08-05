@@ -15,9 +15,10 @@ use crate::{
 };
 
 /// Scenario-level execution settings for phase-4 event draft generation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ScenarioRunnerConfig {
     pub machine: MachineRunnerConfig,
+    pub asset_root: std::path::PathBuf,
 }
 
 /// Result of executing every enabled instance group referenced by a scenario.
@@ -46,7 +47,8 @@ pub fn run_scenario(
     config: ScenarioRunnerConfig,
 ) -> Result<ScenarioRun, RuntimeError> {
     let generator_seed = rng_manager.stream("context-generator").seed();
-    let mut generator = BuiltinGenerator::with_seed(generator_seed);
+    let mut generator =
+        BuiltinGenerator::with_seed_and_asset_root(generator_seed, &config.asset_root);
     run_scenario_with_generator(ir, rng_manager, &mut generator, config)
 }
 
@@ -81,7 +83,8 @@ pub fn generate_scenario(
     config: ScenarioRunnerConfig,
 ) -> Result<GeneratedScenario, RuntimeError> {
     let generator_seed = rng_manager.stream("context-generator").seed();
-    let mut generator = BuiltinGenerator::with_seed(generator_seed);
+    let mut generator =
+        BuiltinGenerator::with_seed_and_asset_root(generator_seed, &config.asset_root);
     generate_scenario_with_generator(ir, rng_manager, &mut generator, config)
 }
 
@@ -549,6 +552,7 @@ mod tests {
                     max_steps: 2,
                     ..MachineRunnerConfig::default()
                 },
+                ..ScenarioRunnerConfig::default()
             },
         )
         .unwrap_err();

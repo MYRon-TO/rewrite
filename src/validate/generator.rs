@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, path::Path};
 
 use serde_json::Value;
 
@@ -9,6 +9,13 @@ use crate::{
 };
 
 pub fn validate_generators(ir: &Ir) -> Result<(), ValidationError> {
+    validate_generators_with_asset_root(ir, Path::new("."))
+}
+
+pub fn validate_generators_with_asset_root(
+    ir: &Ir,
+    asset_root: &Path,
+) -> Result<(), ValidationError> {
     if ir.ir_version != "0.2" {
         return Err(invalid("ir", "ir_version", "expected `0.2`"));
     }
@@ -34,6 +41,60 @@ pub fn validate_generators(ir: &Ir) -> Result<(), ValidationError> {
     }
     for (name, variable) in &ir.context.event {
         validate_source(ir, &variable.source, &format!("context.event.{name}"))?;
+    }
+
+    let mut cache = crate::generator::new_corpus_cache();
+    for (id, generator) in &ir.generators {
+        if generator.generator_type == "corpus_choice" {
+            crate::generator::validate_corpus(
+                &mut cache,
+                asset_root,
+                generator,
+                &generator.params,
+                &format!("generators.{id}"),
+            )
+            .map_err(|message| invalid(format!("generators.{id}"), "source", message))?;
+        }
+    }
+    validate_corpus_sources(ir, asset_root, &mut cache)?;
+    Ok(())
+}
+
+fn validate_corpus_sources(
+    ir: &Ir,
+    asset_root: &Path,
+    cache: &mut crate::generator::corpus_cache::CorpusCache,
+) -> Result<(), ValidationError> {
+    let mut check = |source: &ValueSource, location: String| -> Result<(), ValidationError> {
+        let ValueSource::Generator(value) = source else {
+            return Ok(());
+        };
+        let Some(generator) = ir.generators.get(&value.generator) else {
+            return Ok(());
+        };
+        if generator.generator_type != "corpus_choice" {
+            return Ok(());
+        }
+        let mut merged = generator.params.clone();
+        merged.extend(value.params.clone());
+        crate::generator::validate_corpus(cache, asset_root, generator, &merged, &location)
+            .map_err(|message| invalid(location, "source", message))
+    };
+    for (name, variable) in &ir.context.global {
+        check(&variable.source, format!("context.global.{name}"))?;
+    }
+    for (scope, groups) in [
+        ("system", &ir.context.system),
+        ("instance", &ir.context.instance),
+    ] {
+        for (owner, variables) in groups {
+            for (name, variable) in variables {
+                check(&variable.source, format!("context.{scope}.{owner}.{name}"))?;
+            }
+        }
+    }
+    for (name, variable) in &ir.context.event {
+        check(&variable.source, format!("context.event.{name}"))?;
     }
     Ok(())
 }
