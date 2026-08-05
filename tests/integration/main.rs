@@ -14,6 +14,8 @@ use serde_json::Value;
 
 const SSH_IR: &str = "generated/examples/ssh_bruteforce.json";
 const SSH_GOLDEN_SEED_42: &str = "tests/fixtures/golden/ssh_bruteforce_seed_42.jsonl";
+const CREDENTIAL_IR: &str = "generated/examples/credential_generators.json";
+const CREDENTIAL_GOLDEN_SEED_42: &str = "tests/fixtures/golden/credential_generators_seed_42.jsonl";
 
 #[test]
 fn invalid_fixtures_fail_with_locatable_errors() {
@@ -111,6 +113,28 @@ fn ssh_bruteforce_seed_42_matches_golden_jsonl() {
 
     assert_jsonl_contract(&actual);
     assert_eq!(actual, expected, "seed 42 output drifted from golden file");
+}
+
+#[test]
+fn credential_generators_seed_42_matches_golden_jsonl() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let ir_path = manifest_dir.join(CREDENTIAL_IR);
+    let golden_path = manifest_dir.join(CREDENTIAL_GOLDEN_SEED_42);
+    let out_path = std::env::temp_dir().join(format!(
+        "rewrite-golden-credentials-{}.jsonl",
+        std::process::id()
+    ));
+
+    let ir = load_validated_ir(&ir_path);
+    let generated = generate_scenario(&ir, &RngManager::new(42), ScenarioRunnerConfig::default())
+        .expect("fixed credential IR and seed should generate events");
+    write_events_jsonl(&out_path, generated.events.iter()).expect("golden candidate should write");
+    let actual = fs::read_to_string(&out_path).expect("generated JSONL should be readable");
+    let _ = fs::remove_file(&out_path);
+    let expected = fs::read_to_string(&golden_path).expect("golden JSONL should be readable");
+
+    assert_jsonl_contract(&actual);
+    assert_eq!(actual, expected, "seed 42 credential output drifted");
 }
 
 fn load_validated_ir(path: &std::path::Path) -> Ir {
