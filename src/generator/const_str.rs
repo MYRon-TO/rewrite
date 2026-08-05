@@ -65,5 +65,5 @@ pub const DEFAULT_NAME: [&str; 30] = [
 pub const UUID_HEX: &[u8; 16] = b"0123456789abcdef";
 
 pub const DEFAULT_FILE_SUFFIX: [&str; 10] = [
-    "txt", "docx", "pdf", "jpg", "png", "mp4", "mp3", "zip", "exe", "html"
+    "txt", "docx", "pdf", "jpg", "png", "mp4", "mp3", "zip", "exe", "html",
 ];
