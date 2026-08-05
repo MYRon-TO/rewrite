@@ -187,6 +187,7 @@ terminal?: bool | *false
 * 时间戳生成器。
 * URL 路径生成器。
 
+当前 IR `0.2` 还支持 `corpus_choice` 与 `machine_secret`。前者从内置 `human-passwords-v1`（`data/human_password.txt`）或本地 UTF-8 文件抽样；后者生成常见密码、Token、JWT、PEM、云凭据等格式的仿真外形。它们只定义值来源：不具备密码学安全性，不验证真实有效性，也不会自动读取或设置攻击标签。
 ### 不负责
 
 * 不暴露具体语言函数。
@@ -222,6 +223,8 @@ terminal?: bool | *false
 * 不实现缓存。
 * 不实现生命周期管理。
 * 不实现跨实例身份映射。
+
+实现层会按 context 生命周期复用已生成的值。语料读取缓存不改变作用域：缓存保存按规范化数据源读取的原始行，具体过滤与 `shuffle_cycle` 抽样状态按完整配置隔离。
 
 ## 6. `scenario`
 

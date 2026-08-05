@@ -1,10 +1,10 @@
-# IR 合约 v0.1
+# IR 合约 v0.2
 
 ## 1. 结论
 
 阶段 1 之后，Rust 运行时只读取 `cue export` 生成的规范化 JSON IR，不读取 CUE，不理解 CUE 的继承、合并和默认值逻辑。
 
-IR v0.1 的固定原则：
+IR v0.2 的固定原则：
 
 1. 顶层结构固定。
 2. 对象集合使用 map，key 为对象 ID。
@@ -18,7 +18,7 @@ IR v0.1 的固定原则：
 
 ```json
 {
-  "ir_version": "0.1",
+  "ir_version": "0.2",
   "systems": {},
   "generators": {},
   "context": {},
@@ -34,7 +34,7 @@ IR v0.1 的固定原则：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---:|---:|---|
-| `ir_version` | string | 是 | IR 合约版本，当前为 `0.1`。 |
+| `ir_version` | string | 是 | IR 合约版本，当前且仅接受 `0.2`。 |
 | `systems` | map | 否 | system 定义集合。 |
 | `generators` | map | 否 | generator 定义集合。 |
 | `context` | object | 否 | 四层上下文定义。 |
@@ -66,7 +66,7 @@ IR v0.1 的固定原则：
 }
 ```
 
-不要在 IR 中混用 array 形式对象集合。下面这种不是 v0.1 合约：
+不要在 IR 中混用 array 形式对象集合。下面这种不是 v0.2 合约：
 
 ```json
 {
@@ -117,7 +117,7 @@ IR v0.1 的固定原则：
 | `params` | object | 是 | `{}` | JSON 兼容参数。 |
 | `description` | string | 否 | 无 | 说明。 |
 
-`generator` 只声明值来源契约，不包含代码、hook、插件或外部调用。`params` 在 v0.1 中按纯 JSON 数据处理；即使出现 `script`、`hook`、`plugin` 等键也不会被执行，Phase 2 的 drift 校验应继续拒绝这类越界意图。
+`generator` 只声明值来源契约，不包含代码、hook、插件或外部调用。`params` 在 v0.2 中按纯 JSON 数据处理；即使出现 `script`、`hook`、`plugin` 等键也不会被执行，Phase 2 的 drift 校验应继续拒绝这类越界意图。
 
 Phase 3 后冻结的 MVP 内置 generator 类型如下：
 
@@ -130,8 +130,14 @@ Phase 3 后冻结的 MVP 内置 generator 类型如下：
 | `username` / `simple_username` | 生成简单用户名，可用 `params.a`、`params.b` 覆盖词表。 |
 | `uuid` | 生成 UUID v4 字符串。 |
 | `session_id` | 生成带 `sess-` 前缀的 session id。 |
+| `corpus_choice` | 从内置或本地 UTF-8 语料按行抽样；`source` 必填。 |
+| `machine_secret` | 生成仿真机器密钥外形；`profile` 必填。 |
 
-上述别名也属于冻结合约的一部分。新增 generator 类型必须通过后续 IR 版本或显式兼容变更进入，不能在 v0.1 里偷偷塞插件；这不是扩展性，这是把门拆了还说通风好。
+上述别名也属于冻结合约的一部分。新增 generator 类型必须通过后续 IR 版本或显式兼容变更进入，不能在 v0.2 里偷偷塞插件；这不是扩展性，这是把门拆了还说通风好。
+
+`corpus_choice` 的 `source` 只能是 `{builtin: "human-passwords-v1"}` 或 `{path: string}`。默认参数为 `min_length: 1`、`max_length: 128`、`sampling: "uniform"`、`deduplicate: true`、`keep_empty: false`；长度按 Unicode 字符数，`sampling` 还支持 `shuffle_cycle`。相对路径以 CLI `--asset-dir` 为根，未指定时以 IR 文件所在目录为根；绝对路径直接使用。
+
+`machine_secret.profile` 支持 `hex`、`base64`、`base64url`、`uuid`、`api_key`、`bearer_token`、`jwt_shape`、`pem_shape`、`cloud_access_key`、`cloud_secret_pair`、`connection_string` 和 `private_token`。这些输出仅用于仿真，不具备密码学安全性或真实性。生成器不会自动设置攻击标签；攻击语义仍属于 machine/state 合约。生成器参数与 context 使用点参数合并，使用点优先，合并结果拒绝未知参数。
 
 ### 4.3 `context`
 
@@ -414,7 +420,7 @@ Phase 3 后冻结的 MVP 内置 generator 类型如下：
 | `params` | object | 否 | 无 | JSON 兼容参数。 |
 | `description` | string | 否 | 无 | 说明。 |
 
-`instance_group` 不支持 `attack_ratio`。`params` 在 v0.1 中只作为纯 JSON 数据透传，不承载脚本、hook、插件或攻击比例控制语义；Phase 2 drift 校验应继续拦截这类字段。
+`instance_group` 不支持 `attack_ratio`。`params` 在 v0.2 中只作为纯 JSON 数据透传，不承载脚本、hook、插件或攻击比例控制语义；Phase 2 drift 校验应继续拦截这类字段。
 
 ### 4.10 `time_profile`
 
@@ -529,7 +535,7 @@ ctx.event.attempt_id
 
 | 路径 | 默认值 |
 |---|---:|
-| `ir_version` | `"0.1"` |
+| `ir_version` | `"0.2"` |
 | `generator.params` | `{}` |
 | `context.global` | `{}` |
 | `context.system` | `{}` |
@@ -553,7 +559,7 @@ ctx.event.attempt_id
 
 ## 7. 明确禁止的字段和对象
 
-IR v0.1 不支持：
+IR v0.2 不支持：
 
 - `entity`
 - `attack_chain`
@@ -583,7 +589,7 @@ scripts/export-ir.sh
 
 ```json
 {
-  "ir_version": "0.1",
+  "ir_version": "0.2",
   "systems": {
     "linux_auth": {
       "id": "linux_auth",

@@ -87,6 +87,8 @@ cargo run -- generate \
 
 `--enable-attack false` 只影响运行时转移采样：生成器会排除目标状态为 `kind="attack"` 的转移；如果某个非终止状态因此没有可用的非攻击转移，生成会失败并说明原因。它不会修改 IR，也不会强制改写标签。
 
+密码语料使用相对路径时，可为 `validate` 和 `generate` 传入 `--asset-dir <PATH>`；未传入时以 IR 文件所在目录为根，绝对路径直接使用。默认内置语料是 `data/human_password.txt`（ID：`human-passwords-v1`）。密码与机器密钥生成值仅用于日志仿真，不具备密码学安全性，也不会自动设置攻击标签。
+
 也可以直接使用 Makefile：
 
 ```bash
@@ -130,8 +132,8 @@ make run-example    # 导出 IR 并生成 out/events.jsonl
 CLI 子命令：
 
 ```bash
-cargo run -- validate --ir <path-to-ir.json>
-cargo run -- generate --ir <path-to-ir.json> --out <path-to-events.jsonl> [--seed <u64>]
+cargo run -- validate --ir <path-to-ir.json> [--asset-dir <path>]
+cargo run -- generate --ir <path-to-ir.json> --out <path-to-events.jsonl> [--seed <u64>] [--asset-dir <path>]
 ```
 
 ## 示例场景

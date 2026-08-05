@@ -77,6 +77,8 @@
 * 一次性 nonce。
 * 单次尝试中的随机目标字段。
 
+密码与密钥也遵循同一规则：系统服务密钥通常放在 `system`，账户密码或 API Key 放在 `instance`，一次性 Token 或密码候选放在 `event`，场景统一测试值放在 `global`。生成器本身不实现生命周期复用，context 才决定生成值的共享范围。对象型结果（如 `cloud_secret_pair`）可通过 `ctx.<scope>.<name>.<field>` 引用子字段。
+
 ## 4. 攻击变量作用域
 
 攻击状态仍然使用现有 `context` 作用域。
@@ -144,6 +146,8 @@ template.name contains "failed" -> label.is_attack = true
 ```
 
 失败登录不一定是攻击。正常用户忘密码也很常见，虽然这行为像把脑子缓存清空了，但它不是攻击。
+
+`corpus_choice` 或 `machine_secret` 只生成值，不根据值的形态判断攻击。将同一密码或密钥生成器同时用于正常与攻击状态是合法复用；标签仍由发出事件的 machine state 决定。
 
 ## 7. 复用机制要求
 

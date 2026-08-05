@@ -129,6 +129,13 @@ IR validation passed: generated/examples/ssh_bruteforce.json
 - 状态机非法：start 状态不存在、transition 指向不存在状态。
 - MVP 边界漂移：出现 `entity`、`attack_chain`、`attack_ratio` 等禁止字段。
 
+如果 IR 中的 `corpus_choice` 使用相对 `source.path`，路径默认相对于 IR 文件所在目录；也可显式指定本地资产根：
+
+```bash
+cargo run -- validate --ir generated/examples/example.json --asset-dir ./assets
+```
+
+绝对语料路径直接使用。外部文件必须是 UTF-8，最大 16 MiB、最多 1,000,000 行、每行最多 4096 个 Unicode 字符。仅移除 LF/CRLF，不 trim，`#` 不表示注释。
 ### 3.4 生成日志
 
 ```bash
@@ -150,6 +157,9 @@ Generated 102 events from generated/examples/ssh_bruteforce.json to out/events.j
 - `--out`：输出 JSONL 文件路径；父目录不存在时会自动创建。
 - `--seed`：随机种子；相同 IR 与相同 seed 会产生可复现输出。
 
+使用外部语料时，`generate` 同样接受 `--asset-dir <PATH>`。资源首次使用时按规范化数据源缓存原始行；过滤配置和 `shuffle_cycle` 抽样状态彼此隔离。相同 IR、语料内容、seed 与调用顺序可复现；语料内容或调用顺序变化时不保证相同输出。内置 `human-passwords-v1` 来自随程序打包的 `data/human_password.txt`。
+
+`corpus_choice` 默认 `min_length=1`、`max_length=128`、`sampling=uniform`、`deduplicate=true`、`keep_empty=false`。`machine_secret` 生成的密码、Token、JWT、PEM、云凭据等仅用于仿真，不具备密码学安全性或真实性。两类生成器都不会自动设置攻击标签；是否为攻击事件仍由 machine state 和现有攻击标签配置决定。
 也可以一条命令跑默认示例：
 
 ```bash
@@ -272,9 +282,9 @@ cue version
 
 如果失败，重新安装 CUE，并确认可执行文件目录已加入 `PATH`。
 
-### 6.2 `unsupported IR format`
+### 6.2 `unsupported IR format` 或版本错误
 
-原因：CLI 只接受 JSON IR，路径扩展名必须是 `.json`。
+原因：CLI 只接受扩展名为 `.json` 且 `ir_version` 为 `"0.2"` 的 JSON IR；`0.1` 不再读取。
 
 处理：先运行：
 

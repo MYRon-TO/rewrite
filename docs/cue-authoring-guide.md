@@ -56,7 +56,7 @@ cargo run -- generate --ir generated/examples/my_scenario.json --out out/my_scen
 ```cue
 package rewrite
 
-ir_version: "0.1"
+ir_version: "0.2"
 
 systems: {
 	linux_auth: {
@@ -228,6 +228,28 @@ systems: {
 | `simple_words`                 | 生成简单词组                        |
 | `simple_filename`              | 生成简单带后缀的文件名              |
 
+IR `0.2` 还提供两类仿真凭据生成器：
+
+```cue
+generators: {
+	human_password: {
+		type: "corpus_choice"
+		params: {source: {builtin: "human-passwords-v1"}}
+	}
+	api_key: {
+		type: "machine_secret"
+		params: {profile: "api_key"}
+	}
+}
+```
+
+`corpus_choice.source` 必填且只能是 `{builtin: "human-passwords-v1"}` 或 `{path: "..."}`。默认值为 `min_length: 1`、`max_length: 128`、`sampling: "uniform"`、`deduplicate: true`、`keep_empty: false`；另一种抽样方式是 `shuffle_cycle`。行只移除 LF/CRLF，不 trim，`#` 不是注释，长度按 Unicode 字符数计算。
+
+`machine_secret` 支持 `hex`、`base64`、`base64url`、`uuid`、`api_key`、`bearer_token`、`jwt_shape`、`pem_shape`、`cloud_access_key`、`cloud_secret_pair`、`connection_string`、`private_token` profile。生成器定义参数与 context 使用点的 `params` 合并，使用点优先，合并结果仍会校验并拒绝未知参数。
+
+这些值只用于仿真，不具备密码学安全性；JWT、PEM 和云凭据只保证外形。生成器不会读取或设置攻击标签，同一生成器可由 benign 和 attack 状态复用。
+
+常用 profile 默认值：`api_key` 为 `prefix="sim_sk_"`、`body_length=32`、`encoding="base64url"`；`bearer_token` 为 `sim_bearer_`、40、`base64url`（输出不附加 `Bearer `）；`private_token` 为 `sim_tok_`、32、`base64url`；`jwt_shape` 为 `issuer="simulator"`、`subject="simulated-user"`、`signature_length=32`；`pem_shape` 为 `label="SIMULATED PRIVATE KEY"`、`byte_length=64`、`line_width=64`；`cloud_access_key` 为 `prefix="SIMAKIA"`、`body_length=16`；`cloud_secret_pair` 为 `id_prefix="SIMAKIA"`、`id_body_length=16`、`secret_length=40`；`connection_string` 对应 `postgresql://sim_user:<generated>@db.invalid:5432/simdb`，`password_length=32`。`hex`、`base64`、`base64url` 必须提供 `byte_length`，`uuid` 不接受额外参数。
 示例：
 
 ```cue
@@ -674,7 +696,7 @@ cargo run -- generate \
   --seed 42
 ```
 
-相同 IR 和相同 `--seed` 会产生可复现输出。
+相同 IR、相同语料内容、相同 `--seed` 和相同生成调用顺序会产生可复现输出。外部语料相对路径默认以 IR 文件所在目录为根，也可在 `validate` 和 `generate` 中用 `--asset-dir <PATH>` 覆盖；绝对路径直接使用。
 
 ## 7. 常见错误清单
 
