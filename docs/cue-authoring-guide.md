@@ -49,6 +49,8 @@ cargo run -- generate --ir generated/examples/my_scenario.json --out out/my_scen
 
 如果你想从空文件开始，也可以使用下一节的最小模板。
 
+大场景文件可以拆分为多模块：入口文件保留在 examples 目录，定义分片放在同名子目录，详见 6.5 节。
+
 ## 3. 最小可运行 CUE 模板
 
 下面是一个单系统、单状态机、多实例的最小示例。保存为 `cue/examples/minimal_login.cue` 后即可导出和生成。
@@ -697,6 +699,37 @@ cargo run -- generate \
 ```
 
 相同 IR、相同语料内容、相同 `--seed` 和相同生成调用顺序会产生可复现输出。外部语料相对路径默认以 IR 文件所在目录为根，也可在 `validate` 和 `generate` 中用 `--asset-dir <PATH>` 覆盖；绝对路径直接使用。
+
+### 6.5 大场景：入口文件 + 模块目录
+
+场景文件大到难以维护时，按语义拆分为多模块，约定如下：
+
+```text
+cue/examples/<name>.cue   # 入口文件，保留在 examples 目录
+cue/examples/<name>/      # 模块目录，存放各语义分片
+├── 01_xxx.cue
+├── 02_xxx.cue
+└── ...
+```
+
+拆分惯例（参考 `cue/examples/user_system_activity.cue` + `cue/examples/user_system_activity/`）：
+
+- 入口文件只保留编排层：`ir_version`、`instance_groups`、`time_profiles`、`scenario`，并在头部注释里列出模块清单。
+- 模块目录放定义层：`systems`、`generators`、`context`、`templates`、`machines`，按语义分文件（例如模板按 login / user_management / file_operation / database / system 分组）。
+- 所有文件必须声明同一个包：`package rewrite`。
+- 每个顶层字段只在其中一个文件里定义一次，不要跨文件重复定义，避免合并语义被误用。
+
+工具链会自动处理：`validate-cue.sh` 和 `export-ir.sh` 处理入口文件时，会把同名子目录（`<name>.cue` → `<name>/`）下**第一层**的 `*.cue` 一并纳入统一，所以工作流命令不变：
+
+```bash
+scripts/validate-cue.sh cue/examples/user_system_activity.cue
+scripts/export-ir.sh cue/examples/user_system_activity.cue
+```
+
+注意事项（踩坑点）：
+
+- 只纳入**第一层**文件（脚本用 `find -maxdepth 1`）。`<name>/backup/`、`<name>/sub/` 这类二级子目录**不会**被自动纳入；把模块放进二级子目录，校验和导出会静默缺内容。
+- 校验、导出、生成与单文件示例完全等价：入口 + 模块统一后的 IR 与拆分前逐字段一致，只是原始 JSON 键序可能不同（对 Rust 消费无影响）。
 
 ## 7. 常见错误清单
 

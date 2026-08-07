@@ -143,5 +143,27 @@ cargo run -- generate --ir <path-to-ir.json> --out <path-to-events.jsonl> [--see
 - `cue/examples/ssh_bruteforce.cue`：SSH 正常登录与爆破攻击。
 - `cue/examples/multi_instance_login.cue`：多实例登录样例。
 - `cue/examples/multi_system.cue`：多系统并行样例。
+- `cue/examples/user_system_activity.cue`：多用户 + 系统健康监控大场景，拆分为入口文件 + `cue/examples/user_system_activity/` 模块目录。
+
+### 大场景拆分为多模块
+
+场景文件过大时按语义拆分为入口 + 模块目录：
+
+```text
+cue/examples/<name>.cue   # 入口：编排层（ir_version、instance_groups、time_profiles、scenario）
+cue/examples/<name>/      # 模块：定义层（systems、generators、context、templates、machines）
+```
+
+`validate-cue.sh` / `export-ir.sh` 处理入口文件时，会把同名子目录**第一层**的 `*.cue` 一并纳入统一，所以命令不变：
+
+```bash
+scripts/validate-cue.sh cue/examples/user_system_activity.cue
+scripts/export-ir.sh cue/examples/user_system_activity.cue
+```
+
+⚠️ 踩坑提醒：
+
+- 只纳入**第一层**文件（脚本用 `find -maxdepth 1`）。二级子目录（如 `<name>/backup/`）不会被自动纳入，把模块放进去会导致校验/导出静默缺内容。
+- 所有文件必须是同一个包（`package rewrite`），且每个顶层字段只在一个文件里定义。
 
 更多使用说明见 [`docs/usage.md`](docs/usage.md)。
