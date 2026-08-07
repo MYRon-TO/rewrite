@@ -78,6 +78,23 @@ if ((${#examples[@]} == 0)); then
   exit 0
 fi
 
+# Resolve the CUE files that make up one example package: the example file
+# itself plus any *.cue files in a sibling directory named after the example
+# stem (e.g. cue/examples/user_system_activity.cue ->
+# cue/examples/user_system_activity/*.cue). This lets examples be split into
+# multiple modules while keeping a single entry file in the examples dir.
+example_files() {
+  local example="$1"
+  local files=("$example")
+  local module_dir="${example%.cue}"
+  if [[ -d "$module_dir" ]]; then
+    local extra=()
+    mapfile -t extra < <(find "$module_dir" -maxdepth 1 -type f -name '*.cue' -print | sort)
+    files+=("${extra[@]}")
+  fi
+  printf '%s\n' "${files[@]}"
+}
+
 for example in "${examples[@]}"; do
   if [[ ! -f "$example" ]]; then
     echo "[cue-export] error: example file not found: $example" >&2
@@ -93,7 +110,8 @@ for example in "${examples[@]}"; do
   if [[ -n "$export_expr" ]]; then
     cmd+=(-e "$export_expr")
   fi
-  cmd+=("${schema_files[@]}" "$example")
+  mapfile -t cue_files < <(example_files "$example")
+  cmd+=("${schema_files[@]}" "${cue_files[@]}")
 
   echo "[cue-export] exporting $example -> $out_file"
   print_cmd "${cmd[@]}"
